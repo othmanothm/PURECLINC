@@ -1,5 +1,10 @@
 const { getDoctorByUserId } = require('../models/doctorModel');
-const { getDoctorAppointments } = require('../models/appointmentModel');
+const {
+  getDoctorAppointments,
+  getDoctorAppointmentsWithCompletionHints,
+  updateAppointmentStatus,
+} = require('../models/appointmentModel');
+const { APPOINTMENT_STATUS } = require('../constants/appointmentStatus');
 const { getPatientById, getPatientByUserId } = require('../models/patientModel');
 const { getMedicalRecordByPatientId } = require('../models/medicalRecordModel');
 const { updateMedicalRecord } = require('../models/medicalRecordModel');
@@ -23,7 +28,7 @@ async function getMyAppointments(req, res, next) {
       return res.status(404).json({ message: 'Doctor profile not found' });
     }
 
-    const appointments = await getDoctorAppointments(doctor.id);
+    const appointments = await getDoctorAppointmentsWithCompletionHints(doctor.id);
     return res.json({ appointments });
   } catch (err) {
     return next(err);
@@ -153,7 +158,7 @@ async function updatePatientNotes(req, res, next) {
 async function createOrUpdateTreatment(req, res, next) {
   try {
     const { appointmentId } = req.params;
-    const { sessionPrice, amountPaid, notes } = req.body;
+    const { sessionPrice, amountPaid, notes, completeAppointment } = req.body;
 
     // Verify appointment belongs to this doctor
     const doctor = await getDoctorByUserId(req.user.id);
@@ -168,8 +173,16 @@ async function createOrUpdateTreatment(req, res, next) {
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    const { getTreatmentByAppointmentId, createTreatment, updateTreatment } = require('../models/treatmentModel');
-    let treatment = await getTreatmentByAppointmentId(parseInt(appointmentId));
+    const appointmentRow = appointments[0];
+    const aptIdNum = parseInt(appointmentId, 10);
+
+    const {
+      getTreatmentByAppointmentId,
+      createTreatment,
+      updateTreatment,
+      appointmentHasTreatmentEvidenceForCompletion,
+    } = require('../models/treatmentModel');
+    let treatment = await getTreatmentByAppointmentId(aptIdNum);
 
     if (treatment) {
       treatment = await updateTreatment(treatment.id, {
@@ -179,14 +192,31 @@ async function createOrUpdateTreatment(req, res, next) {
       });
     } else {
       treatment = await createTreatment({
-        appointmentId: parseInt(appointmentId),
+        appointmentId: aptIdNum,
         sessionPrice: parseFloat(sessionPrice) || 0,
         amountPaid: parseFloat(amountPaid) || 0,
         notes: notes || null,
       });
     }
 
-    return res.json({ treatment });
+    let appointment = null;
+    if (completeAppointment === true) {
+      if (appointmentRow.status !== APPOINTMENT_STATUS.CONFIRMED) {
+        return res.status(400).json({
+          message: 'Only confirmed appointments can be marked completed after saving treatment.',
+        });
+      }
+      const hasEvidence = await appointmentHasTreatmentEvidenceForCompletion(aptIdNum);
+      if (!hasEvidence) {
+        return res.status(400).json({
+          message:
+            'Treatment must include session price, amount paid, or clinical notes (3+ characters) before completion.',
+        });
+      }
+      appointment = await updateAppointmentStatus(aptIdNum, APPOINTMENT_STATUS.COMPLETED);
+    }
+
+    return res.json({ treatment, ...(appointment ? { appointment } : {}) });
   } catch (err) {
     return next(err);
   }

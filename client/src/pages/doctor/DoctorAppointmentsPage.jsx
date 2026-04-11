@@ -113,6 +113,7 @@ function DoctorAppointmentsPage() {
                     </span>
                     {apt.status === 'pending' && (
                       <select
+                        defaultValue="pending"
                         onChange={(e) => handleStatusChange(apt.id, e.target.value)}
                         className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 bg-white px-3 py-1.5 text-xs font-medium shadow-sm transition-all focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
                       >
@@ -121,6 +122,31 @@ function DoctorAppointmentsPage() {
                         <option value="cancelled">{t('doctor.cancel')}</option>
                       </select>
                     )}
+                    {apt.status === 'confirmed' &&
+                      (apt.hasTreatmentEvidenceForCompletion ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(apt.id, 'completed')}
+                          className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-sky-700"
+                        >
+                          {t('doctor.markCompleted')}
+                        </button>
+                      ) : (
+                        <div className="flex max-w-md flex-col items-end gap-2 sm:flex-row sm:items-center">
+                          <p className="text-right text-xs text-amber-800 dark:text-amber-200">
+                            {t('doctor.completeRequiresTreatment')}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(`/doctor/patients/${apt.patient_id}?highlightAppointment=${apt.id}`)
+                            }
+                            className="shrink-0 rounded-lg border border-amber-500/80 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-sm transition-colors hover:bg-amber-100 dark:border-amber-400 dark:bg-amber-900/30 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                          >
+                            {t('doctor.recordTreatmentFirst')}
+                          </button>
+                        </div>
+                      ))}
                   </div>
                 </div>
               </div>

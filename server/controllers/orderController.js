@@ -4,236 +4,284 @@ const {
   createOrder,
   createOrderItems,
   getOrderById,
+  getOrderByStripeSessionId,
   getOrderItems,
   getPatientOrders,
   getAllOrders,
   updateOrderStatus,
+  updateOrderAdminNotes,
+  updateOrderPaymentStatus,
 } = require('../models/orderModel');
-const { getProductById, updateProductStock } = require('../models/productModel');
+const { decrementStockGuarded, incrementStock, getProductById } = require('../models/productModel');
+const { getDb } = require('../config/db');
+const { buildCheckoutPricing } = require('../services/checkoutPricingService');
+const { inventoryWasDeductedForOrder } = require('../services/orderInventoryService');
+const {
+  ORDER_STATUS,
+  PAYMENT_STATUS,
+  PAYMENT_METHOD,
+  ADMIN_ALLOWED_ORDER_STATUS,
+} = require('../constants/orderConstants');
 
-async function createCheckoutSession(req, res, next) {
+function isStripeConfigured() {
+  const k = process.env.STRIPE_SECRET_KEY;
+  return Boolean(
+    k &&
+      !k.includes('your_key_here') &&
+      !k.includes('sk_test_********') &&
+      k.startsWith('sk_')
+  );
+}
+
+async function placeCodOrderTx(patientId, orderLines, orderTotal, phone, address) {
+  const pool = getDb();
+  const conn = await pool.getConnection();
   try {
-    const { items, paymentMethod, phone, address } = req.body; // [{ productId, quantity }]
+    await conn.beginTransaction();
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'items array is required' });
+    for (const line of orderLines) {
+      const n = await decrementStockGuarded(conn, line.productId, line.quantity);
+      if (n !== 1) {
+        await conn.rollback();
+        const err = new Error(`Insufficient stock for product ${line.productId}`);
+        err.statusCode = 400;
+        err.code = 'INSUFFICIENT_STOCK';
+        throw err;
+      }
     }
 
-    // Validate items and calculate total
-    let totalPrice = 0;
-    const lineItems = [];
+    const order = await createOrder(
+      {
+        patientId,
+        totalPrice: orderTotal,
+        status: ORDER_STATUS.PENDING,
+        paymentStatus: PAYMENT_STATUS.UNPAID,
+        paymentMethod: PAYMENT_METHOD.CASH_ON_DELIVERY,
+        phone,
+        address,
+      },
+      conn
+    );
 
-    for (const item of items) {
-      // Ensure productId is an integer
-      const productId = parseInt(item.productId, 10);
-      const quantity = parseInt(item.quantity, 10);
+    await createOrderItems(
+      order.id,
+      orderLines.map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        price: l.price,
+        originalPrice: l.originalPrice,
+        discountPercentage: l.discountPercentage,
+      })),
+      conn
+    );
 
-      if (isNaN(productId) || isNaN(quantity) || quantity < 1) {
-        return res.status(400).json({ message: 'Invalid productId or quantity' });
-      }
-
-      const product = await getProductById(productId);
-      if (!product) {
-        return res.status(404).json({ message: `Product ${productId} not found` });
-      }
-      if (product.stock < quantity) {
-        return res.status(400).json({ message: `Insufficient stock for ${product.name}` });
-      }
-
-      const itemTotal = parseFloat(product.price) * quantity;
-      totalPrice += itemTotal;
-
-      lineItems.push({
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: product.name,
-            description: product.description || '',
-            images: product.image_url ? [product.image_url] : [],
-          },
-          unit_amount: Math.round(parseFloat(product.price) * 100), // Convert to cents
-        },
-        quantity: quantity,
-      });
-    }
-
-    // Check if Stripe is configured
-    const stripeKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeKey || stripeKey.includes('your_key_here') || stripeKey.includes('sk_test_********')) {
-      // Stripe not configured - create order directly (for testing)
-      const userId = req.user.id;
-      const patient = await getPatientByUserId(userId);
-
-      if (!patient) {
-        return res.status(404).json({ message: 'Patient profile not found' });
-      }
-
-      // Validate and update stock
-      for (const item of items) {
-        const productId = parseInt(item.productId, 10);
-        const quantity = parseInt(item.quantity, 10);
-        const product = await getProductById(productId);
-        if (!product) {
-          return res.status(404).json({ message: `Product ${productId} not found` });
-        }
-        if (product.stock < quantity) {
-          return res.status(400).json({ message: `Insufficient stock for ${product.name}` });
-        }
-        await updateProductStock(productId, quantity);
-      }
-
-      const { paymentMethod, phone, address } = req.body;
-
-      // Create order directly - always start as pending
-      const order = await createOrder({
-        patientId: patient.id,
-        totalPrice: parseFloat(totalPrice),
-        status: 'pending',
-        paymentMethod: paymentMethod || 'cash_on_delivery',
-        phone: phone || null,
-        address: address || null,
-      });
-
-      // Create order items - get prices from products
-      const orderItems = [];
-      for (const item of items) {
-        const productId = parseInt(item.productId, 10);
-        const product = await getProductById(productId);
-        
-        // Calculate final price with discount
-        const originalPrice = parseFloat(product.price);
-        const discountPercentage = parseFloat(product.discount_percentage) || 0;
-        const finalPrice = discountPercentage > 0 
-          ? originalPrice * (1 - discountPercentage / 100)
-          : originalPrice;
-        
-        orderItems.push({
-          productId: productId,
-          quantity: parseInt(item.quantity, 10),
-          price: finalPrice, // Final price after discount
-          originalPrice: originalPrice, // Original price before discount
-          discountPercentage: discountPercentage, // Discount percentage
-        });
-      }
-
-      await createOrderItems(order.id, orderItems);
-
-      // Return success URL for redirect
-      return res.json({ 
-        url: `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/orders?success=true&orderId=${order.id}`,
-        orderId: order.id,
-        directOrder: true
-      });
-    }
-
-    // Stripe is configured - use Stripe Checkout
-    try {
-      const stripe = getStripe();
-      
-      // Determine payment method types based on selection
-      let paymentMethodTypes = ['card'];
-      if (paymentMethod === 'apple_pay') {
-        paymentMethodTypes = ['card', 'apple_pay'];
-      }
-      
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: paymentMethodTypes,
-        line_items: lineItems,
-        mode: 'payment',
-        success_url: `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/orders?success=true`,
-        cancel_url: `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/cart?canceled=true`,
-        metadata: {
-          items: JSON.stringify(items),
-          totalPrice: totalPrice.toString(),
-          paymentMethod: paymentMethod || 'cash_on_delivery',
-          phone: phone || '',
-          address: address || '',
-        },
-      });
-
-      return res.json({ sessionId: session.id, url: session.url });
-    } catch (stripeError) {
-      console.error('Stripe error:', stripeError);
-      if (stripeError.type === 'StripeAuthenticationError') {
-        return res.status(500).json({ 
-          message: 'Payment system configuration error. Please contact administrator.' 
-        });
-      }
-      throw stripeError;
-    }
+    await conn.commit();
+    return getOrderById(order.id);
   } catch (err) {
-    console.error('Checkout session error:', err);
-    return next(err);
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
 
-async function createOrderAfterPayment(req, res, next) {
+/**
+ * @param {import('../services/checkoutPricingService').buildCheckoutPricing} pricing - result of buildCheckoutPricing ok branch
+ */
+async function createStripeOrderAndSession(pricing, patientId, phone, address, paymentMethod) {
+  const { orderLines, orderTotal, stripeLineItems } = pricing;
+  const pool = getDb();
+  const conn = await pool.getConnection();
+  let orderId;
+
   try {
+    await conn.beginTransaction();
+
+    const order = await createOrder(
+      {
+        patientId,
+        totalPrice: orderTotal,
+        status: ORDER_STATUS.AWAITING_PAYMENT,
+        paymentStatus: PAYMENT_STATUS.UNPAID,
+        paymentMethod:
+          paymentMethod === PAYMENT_METHOD.APPLE_PAY ? PAYMENT_METHOD.APPLE_PAY : PAYMENT_METHOD.CARD,
+        phone,
+        address,
+      },
+      conn
+    );
+    orderId = order.id;
+
+    await createOrderItems(
+      order.id,
+      orderLines.map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        price: l.price,
+        originalPrice: l.originalPrice,
+        discountPercentage: l.discountPercentage,
+      })),
+      conn
+    );
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  const stripe = getStripe();
+  let paymentMethodTypes = ['card'];
+  if (paymentMethod === PAYMENT_METHOD.APPLE_PAY) {
+    paymentMethodTypes = ['card', 'apple_pay'];
+  }
+
+  const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: paymentMethodTypes,
+      line_items: stripeLineItems,
+      mode: 'payment',
+      client_reference_id: String(orderId),
+      metadata: {
+        order_id: String(orderId),
+      },
+      success_url: `${clientOrigin}/orders?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${clientOrigin}/cart?canceled=true`,
+    });
+
+    const pool2 = getDb();
+    await pool2.query(`UPDATE Orders SET stripe_checkout_session_id = ? WHERE id = ?`, [
+      session.id,
+      orderId,
+    ]);
+
+    return { url: session.url, sessionId: session.id, orderId };
+  } catch (stripeErr) {
+    const pool3 = getDb();
+    await pool3.query(`DELETE FROM OrderItems WHERE order_id = ?`, [orderId]);
+    await pool3.query(`DELETE FROM Orders WHERE id = ?`, [orderId]);
+    throw stripeErr;
+  }
+}
+
+/**
+ * POST /api/orders/create-checkout-session
+ * Body: items[{ productId, quantity }], paymentMethod, phone, address
+ */
+async function createCheckoutSession(req, res, next) {
+  try {
+    const { items, paymentMethod, phone, address } = req.body;
+
+    if (!phone || !address) {
+      return res.status(400).json({ message: 'Phone and address are required' });
+    }
+
+    const pm = paymentMethod || PAYMENT_METHOD.CASH_ON_DELIVERY;
+
     const userId = req.user.id;
     const patient = await getPatientByUserId(userId);
-
     if (!patient) {
       return res.status(404).json({ message: 'Patient profile not found' });
     }
 
-    const { items, totalPrice, paymentMethod, phone, address } = req.body;
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'items array is required' });
+    const pricing = await buildCheckoutPricing(items, getProductById, { requireSellable: true });
+    if (!pricing.ok) {
+      const status = pricing.code === 'NOT_FOUND' ? 404 : 400;
+      return res.status(status).json({ message: pricing.message, code: pricing.code });
     }
 
-    // Validate and update stock
-    for (const item of items) {
-      const product = await getProductById(item.productId);
-      if (!product) {
-        return res.status(404).json({ message: `Product ${item.productId} not found` });
-      }
-      if (product.stock < item.quantity) {
-        return res.status(400).json({ message: `Insufficient stock for ${product.name}` });
-      }
-      await updateProductStock(item.productId, item.quantity);
-    }
+    const { orderLines, orderTotal } = pricing;
 
-    // Create order - always start as pending
-    const order = await createOrder({
-      patientId: patient.id,
-      totalPrice: parseFloat(totalPrice),
-      status: 'pending',
-      paymentMethod: paymentMethod || 'card',
-      phone: phone || null,
-      address: address || null,
-    });
-
-    // Create order items - need to get product info for discount
-    const orderItems = [];
-    for (const item of items) {
-      const product = await getProductById(item.productId);
-      if (!product) {
-        continue;
-      }
-      
-      // Calculate final price with discount
-      const originalPrice = parseFloat(product.price);
-      const discountPercentage = parseFloat(product.discount_percentage) || 0;
-      const finalPrice = discountPercentage > 0 
-        ? originalPrice * (1 - discountPercentage / 100)
-        : originalPrice;
-      
-      orderItems.push({
-        productId: item.productId,
-        quantity: item.quantity,
-        price: finalPrice, // Final price after discount
-        originalPrice: originalPrice, // Original price before discount
-        discountPercentage: discountPercentage, // Discount percentage
+    if (pm === PAYMENT_METHOD.CASH_ON_DELIVERY) {
+      const order = await placeCodOrderTx(patient.id, orderLines, orderTotal, phone, address);
+      const full = await getOrderById(order.id);
+      const lineItems = await getOrderItems(order.id);
+      return res.status(201).json({
+        directOrder: true,
+        order: full,
+        items: lineItems,
+        url: `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/orders?orderId=${order.id}&success=cod`,
       });
     }
 
-    await createOrderItems(order.id, orderItems);
+    if (pm !== PAYMENT_METHOD.CARD && pm !== PAYMENT_METHOD.APPLE_PAY) {
+      return res.status(400).json({ message: 'Invalid payment method' });
+    }
 
-    const fullOrder = await getOrderById(order.id);
-    const itemsData = await getOrderItems(order.id);
+    if (!isStripeConfigured()) {
+      return res.status(503).json({
+        message: 'Card payment is not configured. Choose cash on delivery or contact support.',
+        code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
 
-    return res.status(201).json({ order: fullOrder, items: itemsData });
+    const { url, orderId } = await createStripeOrderAndSession(
+      pricing,
+      patient.id,
+      phone,
+      address,
+      pm
+    );
+
+    return res.json({
+      url,
+      orderId,
+      sessionId: undefined,
+      directOrder: false,
+    });
+  } catch (err) {
+    if (err.type === 'StripeAuthenticationError') {
+      return res.status(500).json({
+        message: 'Payment system configuration error. Please contact administrator.',
+      });
+    }
+    return next(err);
+  }
+}
+
+/** POST /api/orders/checkout-preview — read-only totals */
+async function previewCheckout(req, res, next) {
+  try {
+    const { items } = req.body;
+    const pricing = await buildCheckoutPricing(items, getProductById, { requireSellable: true });
+    if (!pricing.ok) {
+      const status = pricing.code === 'NOT_FOUND' ? 404 : 400;
+      return res.status(status).json({ message: pricing.message, code: pricing.code });
+    }
+    return res.json({
+      orderTotal: pricing.orderTotal,
+      lines: pricing.orderLines.map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        originalUnitPrice: l.originalPrice,
+        discountedUnitPrice: l.price,
+        discountPercentage: l.discountPercentage,
+        lineTotal: Math.round(l.price * l.quantity * 100) / 100,
+      })),
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** GET /api/orders/by-session/:sessionId — patient must own order */
+async function getOrderBySessionForPatient(req, res, next) {
+  try {
+    const { sessionId } = req.params;
+    const order = await getOrderByStripeSessionId(sessionId);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    const patient = await getPatientByUserId(req.user.id);
+    if (!patient || order.patient_id !== patient.id) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const items = await getOrderItems(order.id);
+    return res.json({ order, items });
   } catch (err) {
     return next(err);
   }
@@ -249,8 +297,7 @@ async function getMyOrders(req, res, next) {
     }
 
     const orders = await getPatientOrders(patient.id);
-    
-    // Get items for each order
+
     const ordersWithItems = await Promise.all(
       orders.map(async (order) => {
         const items = await getOrderItems(order.id);
@@ -266,14 +313,15 @@ async function getMyOrders(req, res, next) {
 
 async function getAllOrdersController(req, res, next) {
   try {
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { status, paymentStatus, search, limit = 50, offset = 0 } = req.query;
     const orders = await getAllOrders({
       status,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
+      paymentStatus,
+      search,
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
     });
 
-    // Get items for each order
     const ordersWithItems = await Promise.all(
       orders.map(async (order) => {
         const items = await getOrderItems(order.id);
@@ -287,20 +335,107 @@ async function getAllOrdersController(req, res, next) {
   }
 }
 
+async function restoreInventoryForOrder(connection, orderId) {
+  const items = await getOrderItems(orderId, connection);
+  for (const row of items) {
+    await incrementStock(connection, row.product_id, row.quantity);
+  }
+}
+
 async function updateOrderStatusController(req, res, next) {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
+    const id = parseInt(orderId, 10);
 
-    if (!status || !['pending', 'confirmed', 'paid', 'cancelled'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status. Must be: pending, confirmed, paid, or cancelled' });
+    if (!status || !ADMIN_ALLOWED_ORDER_STATUS.includes(status)) {
+      return res.status(400).json({
+        message: `Invalid status. Must be one of: ${ADMIN_ALLOWED_ORDER_STATUS.join(', ')}`,
+      });
     }
 
-    const order = await updateOrderStatus(parseInt(orderId, 10), status);
-    if (!order) {
+    const existing = await getOrderById(id);
+    if (!existing) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    if (existing.status === ORDER_STATUS.CANCELLED) {
+      return res.status(400).json({ message: 'Order is already cancelled' });
+    }
+
+    if (status === ORDER_STATUS.CANCELLED) {
+      const pool = getDb();
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const fresh = await getOrderById(id, conn);
+        if (inventoryWasDeductedForOrder(fresh)) {
+          await restoreInventoryForOrder(conn, id);
+        }
+        await updateOrderStatus(id, ORDER_STATUS.CANCELLED, conn);
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+      const order = await getOrderById(id);
+      const items = await getOrderItems(order.id);
+      return res.json({ order: { ...order, items } });
+    }
+
+    const order = await updateOrderStatus(id, status);
+    const items = await getOrderItems(order.id);
+    return res.json({ order: { ...order, items } });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function getAdminOrderByIdController(req, res, next) {
+  try {
+    const id = parseInt(req.params.orderId, 10);
+    const order = await getOrderById(id);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    const items = await getOrderItems(id);
+    return res.json({ order, items });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function patchAdminOrderNotesController(req, res, next) {
+  try {
+    const id = parseInt(req.params.orderId, 10);
+    const { adminNotes } = req.body;
+    const existing = await getOrderById(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    const order = await updateOrderAdminNotes(id, adminNotes ?? null);
+    const items = await getOrderItems(order.id);
+    return res.json({ order: { ...order, items } });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function patchAdminOrderPaymentStatusController(req, res, next) {
+  try {
+    const id = parseInt(req.params.orderId, 10);
+    const { paymentStatus } = req.body;
+    const allowed = ['unpaid', 'paid', 'failed', 'refunded'];
+    if (!paymentStatus || !allowed.includes(paymentStatus)) {
+      return res.status(400).json({ message: 'Invalid payment_status' });
+    }
+    const existing = await getOrderById(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    const order = await updateOrderPaymentStatus(id, paymentStatus);
     const items = await getOrderItems(order.id);
     return res.json({ order: { ...order, items } });
   } catch (err) {
@@ -310,9 +445,12 @@ async function updateOrderStatusController(req, res, next) {
 
 module.exports = {
   createCheckoutSession,
-  createOrderAfterPayment,
+  previewCheckout,
+  getOrderBySessionForPatient,
   getMyOrders,
   getAllOrdersController,
+  getAdminOrderByIdController,
+  patchAdminOrderNotesController,
+  patchAdminOrderPaymentStatusController,
   updateOrderStatusController,
 };
-

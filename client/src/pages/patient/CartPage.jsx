@@ -14,9 +14,6 @@ function CartPage() {
     paymentMethod: 'cash_on_delivery',
     phone: '',
     address: '',
-    cardNumber: '',
-    cvv: '',
-    cardholderName: '',
   });
 
   useEffect(() => {
@@ -37,7 +34,6 @@ function CartPage() {
   const updateCart = (newCart) => {
     setCart(newCart);
     localStorage.setItem('pureskin_cart', JSON.stringify(newCart));
-    // Trigger custom event to update cart count in header
     window.dispatchEvent(new CustomEvent('cartUpdated'));
   };
 
@@ -59,53 +55,16 @@ function CartPage() {
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const formatCardNumber = (value) => {
-    // Remove all non-digits
-    const cleaned = value.replace(/\D/g, '');
-    // Add spaces every 4 digits
-    const formatted = cleaned.match(/.{1,4}/g)?.join(' ') || cleaned;
-    return formatted.substring(0, 19); // Max 16 digits + 3 spaces
-  };
-
-  const handleCardNumberChange = (e) => {
-    const formatted = formatCardNumber(e.target.value);
-    setCheckoutData({ ...checkoutData, cardNumber: formatted });
-  };
-
-  const handleCvvChange = (e) => {
-    const cleaned = e.target.value.replace(/\D/g, '').substring(0, 4);
-    setCheckoutData({ ...checkoutData, cvv: cleaned });
-  };
-
   const handleCheckout = async () => {
     if (cart.length === 0) return;
 
-    // Validate checkout data
     if (!checkoutData.phone || !checkoutData.address) {
       toast.error(t('cart.fillPhoneAddress'));
       return;
     }
 
-    // Validate card details if payment method is card
-    if (checkoutData.paymentMethod === 'card') {
-      const cardNumberDigits = checkoutData.cardNumber.replace(/\D/g, '');
-      if (cardNumberDigits.length !== 16) {
-        toast.error(t('cart.validCardNumber'));
-        return;
-      }
-      if (checkoutData.cvv.length < 3 || checkoutData.cvv.length > 4) {
-        toast.error(t('cart.validCVV'));
-        return;
-      }
-      if (!checkoutData.cardholderName.trim()) {
-        toast.error(t('cart.cardholderNameRequired'));
-        return;
-      }
-    }
-
     setLoading(true);
     try {
-      // Ensure productId is an integer and quantity is valid
       const items = cart
         .filter((item) => item.productId && item.quantity > 0)
         .map((item) => ({
@@ -119,50 +78,42 @@ function CartPage() {
         return;
       }
 
-      // Prepare payment data
+      try {
+        await orderService.previewCheckout(items);
+      } catch (previewErr) {
+        const msg = previewErr.response?.data?.message || previewErr.message || 'Checkout validation failed';
+        toast.error(msg);
+        setLoading(false);
+        return;
+      }
+
       const paymentData = {
         paymentMethod: checkoutData.paymentMethod,
         phone: checkoutData.phone,
         address: checkoutData.address,
       };
 
-      // Add card details if payment method is card
-      if (checkoutData.paymentMethod === 'card') {
-        paymentData.cardNumber = checkoutData.cardNumber.replace(/\D/g, '');
-        paymentData.cvv = checkoutData.cvv;
-        paymentData.cardholderName = checkoutData.cardholderName;
+      const data = await orderService.createCheckoutSession(items, paymentData);
+
+      if (data.directOrder && data.url) {
+        localStorage.removeItem('pureskin_cart');
+        window.dispatchEvent(new CustomEvent('cartUpdated'));
+        window.location.href = data.url;
+        return;
       }
 
-      // If cash on delivery, create order directly
-      if (checkoutData.paymentMethod === 'cash_on_delivery') {
-        const data = await orderService.createCheckoutSession(items, paymentData);
-        
-        if (data.url) {
-          localStorage.removeItem('pureskin_cart');
-          window.dispatchEvent(new CustomEvent('cartUpdated'));
-          window.location.href = data.url;
-        }
-      } else {
-        // For card/apple pay, use Stripe
-        const data = await orderService.createCheckoutSession(items, paymentData);
-        
-        if (data.url) {
-          if (data.directOrder) {
-            localStorage.removeItem('pureskin_cart');
-            window.dispatchEvent(new CustomEvent('cartUpdated'));
-            window.location.href = data.url;
-          } else {
-            // Redirect to Stripe Checkout
-            window.location.href = data.url;
-          }
-        } else {
-          throw new Error('No checkout URL received');
-        }
+      if (data.url) {
+        window.location.href = data.url;
+        return;
       }
+
+      throw new Error('No checkout URL received');
     } catch (err) {
       console.error('Checkout error:', err);
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to create checkout session';
+      const errorMessage =
+        err.response?.data?.message || err.message || 'Failed to create checkout session';
       toast.error(errorMessage);
+    } finally {
       setLoading(false);
     }
   };
@@ -200,7 +151,7 @@ function CartPage() {
                   ) : (
                     <div className="flex h-24 w-24 items-center justify-center rounded-xl bg-slate-100">
                       <svg className="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6.75A1.5 1.5 0 0021.75 5.25h-16.5A1.5 1.5 0 003.75 6.75v12.75a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6.75A1.5 1.5 0 0021.75 5.25h-16.5A1.5 1.5 0 003.75 6.75v12.75A1.5 1.5 0 005.25 21h16.5a1.5 1.5 0 001.5-1.5v-6a1.5 1.5 0 00-1.5-1.5h-9.51a1.5 1.5 0 00-1.5 1.5v6a1.5 1.5 0 01-1.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                       </svg>
                     </div>
                   )}
@@ -210,6 +161,7 @@ function CartPage() {
                   </div>
                   <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
                     <button
+                      type="button"
                       onClick={() => updateQuantity(item.productId, item.quantity - 1)}
                       className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white hover:text-sky-600"
                     >
@@ -219,6 +171,7 @@ function CartPage() {
                     </button>
                     <span className="w-8 text-center text-sm font-semibold text-slate-900">{item.quantity}</span>
                     <button
+                      type="button"
                       onClick={() => updateQuantity(item.productId, item.quantity + 1)}
                       className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white hover:text-sky-600"
                     >
@@ -231,6 +184,7 @@ function CartPage() {
                     <p className="text-lg font-bold text-slate-900 dark:text-slate-100">${(item.price * item.quantity).toFixed(2)}</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => removeItem(item.productId)}
                     className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
                     aria-label="Remove item"
@@ -251,7 +205,11 @@ function CartPage() {
                     ${total.toFixed(2)}
                   </span>
                 </div>
+                <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+                  Totals are confirmed at checkout from the server. Cart amounts are estimates only.
+                </p>
                 <button
+                  type="button"
                   onClick={() => setShowCheckoutForm(true)}
                   className="w-full rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-4 text-base font-semibold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
                 >
@@ -261,8 +219,7 @@ function CartPage() {
             ) : (
               <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
                 <h2 className="mb-6 text-2xl font-bold text-slate-900 dark:text-slate-100">{t('cart.checkoutInfo')}</h2>
-                
-                {/* Payment Method */}
+
                 <div className="mb-6">
                   <label className="mb-3 block text-sm font-semibold text-slate-700 dark:text-slate-300">{t('cart.paymentMethod')}</label>
                   <div className="grid gap-3 md:grid-cols-3">
@@ -275,9 +232,6 @@ function CartPage() {
                           : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                       }`}
                     >
-                      <svg className="mx-auto mb-2 h-8 w-8" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-                      </svg>
                       <p className="text-sm font-semibold">{t('cart.cashOnDelivery')}</p>
                     </button>
                     <button
@@ -289,9 +243,6 @@ function CartPage() {
                           : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-500'
                       }`}
                     >
-                      <svg className="mx-auto mb-2 h-8 w-8" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v12.75A2.25 2.25 0 004.5 21.75z" />
-                      </svg>
                       <p className="text-sm font-semibold">{t('cart.card')}</p>
                     </button>
                     <button
@@ -303,143 +254,47 @@ function CartPage() {
                           : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                       }`}
                     >
-                      <svg className="mx-auto mb-2 h-8 w-8" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
                       <p className="text-sm font-semibold">{t('cart.applePay')}</p>
                     </button>
                   </div>
                 </div>
 
-                {/* Phone Number */}
                 <div className="mb-6">
                   <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">{t('cart.phoneNumber')}</label>
                   <input
                     type="tel"
                     value={checkoutData.phone}
                     onChange={(e) => setCheckoutData({ ...checkoutData, phone: e.target.value })}
-                    placeholder={t('cart.phoneNumber')}
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    required
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3"
+                    placeholder="+1..."
                   />
                 </div>
 
-                {/* Address */}
                 <div className="mb-6">
                   <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">{t('cart.deliveryAddress')}</label>
                   <textarea
                     value={checkoutData.address}
                     onChange={(e) => setCheckoutData({ ...checkoutData, address: e.target.value })}
-                    placeholder={t('cart.deliveryAddress')}
                     rows={3}
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    required
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3"
                   />
                 </div>
 
-                {/* Card Details - Only show when Card/Visa is selected */}
-                {checkoutData.paymentMethod === 'card' && (
-                  <div className="mb-6 rounded-xl border-2 border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30 p-5">
-                    <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-slate-100">
-                      <svg className="h-5 w-5 text-sky-600 dark:text-sky-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v12.75A2.25 2.25 0 004.5 21.75z" />
-                      </svg>
-                      {t('cart.paymentMethod')}
-                    </h3>
-                    
-                    {/* Cardholder Name */}
-                    <div className="mb-4">
-                      <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">{t('cart.cardholderName')}</label>
-                      <input
-                        type="text"
-                        value={checkoutData.cardholderName}
-                        onChange={(e) => setCheckoutData({ ...checkoutData, cardholderName: e.target.value.toUpperCase() })}
-                        placeholder="JOHN DOE"
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3 text-sm uppercase focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        required
-                        maxLength={50}
-                      />
-                    </div>
-
-                    {/* Card Number */}
-                    <div className="mb-4">
-                      <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">{t('cart.cardNumber')}</label>
-                      <input
-                        type="text"
-                        value={checkoutData.cardNumber}
-                        onChange={handleCardNumberChange}
-                        placeholder="1234 5678 9012 3456"
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        required
-                        maxLength={19}
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('cart.validCardNumber')}</p>
-                    </div>
-
-                    {/* CVV */}
-                    <div className="mb-4">
-                      <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">{t('cart.cvv')}</label>
-                      <input
-                        type="text"
-                        value={checkoutData.cvv}
-                        onChange={handleCvvChange}
-                        placeholder="123"
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        required
-                        maxLength={4}
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('cart.validCVV')}</p>
-                    </div>
-
-                    <div className="rounded-lg bg-blue-50 p-3">
-                      <div className="flex items-start gap-2">
-                        <svg className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                        </svg>
-                        <p className="text-xs text-blue-700">
-                          Your payment information is secure and encrypted. We do not store your card details.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Total and Actions */}
-                <div className="mb-6 flex items-center justify-between border-t border-slate-200 dark:border-slate-700 pt-4">
-                  <span className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('cart.total')}:</span>
-                  <span className="text-3xl font-bold bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
-                    ${total.toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   <button
-                    onClick={() => setShowCheckoutForm(false)}
-                    className="flex-1 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-6 py-3 text-base font-semibold text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-50 dark:hover:bg-slate-600"
+                    type="button"
+                    onClick={handleCheckout}
+                    disabled={loading}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-4 text-base font-semibold text-white shadow-lg disabled:opacity-60"
                   >
-                    {t('common.back')}
+                    {loading ? t('cart.processing') : t('cart.completeOrder')}
                   </button>
                   <button
-                    onClick={handleCheckout}
-                    disabled={
-                      loading || 
-                      !checkoutData.phone || 
-                      !checkoutData.address ||
-                      (checkoutData.paymentMethod === 'card' && (!checkoutData.cardNumber || !checkoutData.cvv || !checkoutData.cardholderName))
-                    }
-                    className="flex-1 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-4 text-base font-semibold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:opacity-60"
+                    type="button"
+                    onClick={() => setShowCheckoutForm(false)}
+                    className="rounded-xl border border-slate-300 px-6 py-4 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                   >
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        {t('cart.processing')}
-                      </span>
-                    ) : (
-                      t('cart.completeOrder')
-                    )}
+                    {t('common.back')}
                   </button>
                 </div>
               </div>
@@ -452,4 +307,3 @@ function CartPage() {
 }
 
 export default CartPage;
-

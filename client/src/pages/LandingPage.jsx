@@ -1,9 +1,64 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../contexts/SettingsContext';
+import { reviewService } from '../services/reviewService';
 
 function LandingPage() {
   const { t } = useTranslation();
   const { language, theme, toggleLanguage, toggleTheme } = useSettings();
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fallbackReviews = [
+    { text: 'Amazing', rating: 5 },
+    { text: 'Outstanding results', rating: 5 },
+    { text: 'A first class service', rating: 5 },
+    { text: 'Results have been amazing', rating: 5 },
+    { text: 'Cannot recommend highly enough', rating: 5 },
+    { text: 'What a fabulous find', rating: 5 },
+  ];
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadReviews = async () => {
+      setLoading(true);
+      try {
+        const data = await reviewService.getApprovedReviews({ limit: 6, offset: 0 });
+        const apiReviews = Array.isArray(data?.reviews)
+          ? data.reviews
+              .slice(0, 6)
+              .map((review) => ({
+                text: review.comment,
+                rating: review.rating,
+                patientName: review.patient_name || null,
+                createdAt: review.created_at || null,
+              }))
+              .filter((review) => review.text && review.rating)
+          : [];
+
+        if (mounted) {
+          setReviews(apiReviews);
+        }
+      } catch {
+        if (mounted) {
+          setReviews([]);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadReviews();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const reviewsToRender = !loading && reviews.length > 0 ? reviews : fallbackReviews;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:bg-slate-900">
@@ -141,8 +196,8 @@ function LandingPage() {
                   />
                 </svg>
               </div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">Look brighter & fresher</h3>
-              <p className="text-slate-600 dark:text-slate-300">
+              <h3 className="mb-2 text-xl font-bold text-slate-900">Look brighter & fresher</h3>
+              <p className="text-slate-700">
                 Clearer younger looking skin with injectables, fillers, wrinkle removal, and
                 rejuvenation
               </p>
@@ -165,8 +220,8 @@ function LandingPage() {
                   />
                 </svg>
               </div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">Advanced Tattoo Removal</h3>
-              <p className="text-slate-600 dark:text-slate-300">
+              <h3 className="mb-2 text-xl font-bold text-slate-900">Advanced Tattoo Removal</h3>
+              <p className="text-slate-700">
                 The fastest, most painless laser removal of tattoos with Pico Pro Laser technology
               </p>
             </div>
@@ -188,8 +243,8 @@ function LandingPage() {
                   />
                 </svg>
               </div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">Professional Qualifications</h3>
-              <p className="text-slate-600 dark:text-slate-300">
+              <h3 className="mb-2 text-xl font-bold text-slate-900">Professional Qualifications</h3>
+              <p className="text-slate-700">
                 Postgraduate Level 7 – Master&apos;s level aesthetic medicine qualification
               </p>
             </div>
@@ -369,34 +424,46 @@ function LandingPage() {
         <div className="mx-auto max-w-7xl px-4">
           <h2 className="mb-12 text-center text-4xl font-bold text-slate-900 dark:text-slate-100">What our clients say</h2>
           <div className="grid gap-6 md:grid-cols-3">
-            {[
-              { text: 'Amazing', rating: 5 },
-              { text: 'Outstanding results', rating: 5 },
-              { text: 'A first class service', rating: 5 },
-              { text: 'Results have been amazing', rating: 5 },
-              { text: 'Cannot recommend highly enough', rating: 5 },
-              { text: 'What a fabulous find', rating: 5 },
-            ].map((review, idx) => (
-              <div
-                key={idx}
-                className="group rounded-2xl bg-white dark:bg-slate-700 p-6 shadow-md transition-all hover:scale-105 hover:shadow-xl"
-              >
-                <div className="mb-4 flex gap-1 text-yellow-400">
-                  {[...Array(review.rating)].map((_, i) => (
-                    <svg
-                      key={i}
-                      className="h-6 w-6 transition-transform group-hover:scale-110"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
+            {reviewsToRender.map((review, idx) => {
+              const nameFromApi =
+                typeof review.patient_name === 'string' ? review.patient_name.trim() : '';
+              const nameFromMap =
+                typeof review.patientName === 'string' ? review.patientName.trim() : '';
+              const reviewerName = nameFromApi || nameFromMap || 'PureSkin Clinic Client';
+              const createdRaw = review.createdAt ?? review.created_at ?? null;
+
+              return (
+                <div
+                  key={idx}
+                  className="group rounded-2xl bg-white dark:bg-slate-700 p-6 shadow-md transition-all hover:scale-105 hover:shadow-xl"
+                >
+                  <div className="mb-4 flex gap-1 text-yellow-400">
+                    {[...Array(review.rating)].map((_, i) => (
+                      <svg
+                        key={i}
+                        className="h-6 w-6 transition-transform group-hover:scale-110"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    ))}
+                  </div>
+                  <p className="text-lg font-semibold text-slate-800 dark:text-slate-200">{review.text}</p>
+                  <p className="mt-4 text-sm font-semibold text-slate-700 dark:text-slate-200">{reviewerName}</p>
+                  {createdRaw ? (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {new Date(createdRaw).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </p>
+                  ) : null}
                 </div>
-                <p className="text-lg font-semibold text-slate-800 dark:text-slate-200">{review.text}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>

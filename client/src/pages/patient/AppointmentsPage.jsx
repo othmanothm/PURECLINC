@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { appointmentService } from '../../services/appointmentService';
+import { reviewService } from '../../services/reviewService';
 
 function AppointmentsPage() {
   const { t } = useTranslation();
@@ -16,6 +17,24 @@ function AppointmentsPage() {
   const [error, setError] = useState('');
   const hasLoadedRef = useRef(false);
   const slotsLoadingRef = useRef(false);
+  const [reviewedAppointmentIds, setReviewedAppointmentIds] = useState(() => new Set());
+
+  const reviewedKey = 'pureskin_reviewed_appointments';
+
+  const reviewedSet = useMemo(() => reviewedAppointmentIds, [reviewedAppointmentIds]);
+
+  const markReviewed = useCallback((appointmentId) => {
+    setReviewedAppointmentIds((prev) => {
+      const next = new Set(prev);
+      next.add(Number(appointmentId));
+      try {
+        window.localStorage.setItem(reviewedKey, JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
 
 
   useEffect(() => {
@@ -25,6 +44,35 @@ function AppointmentsPage() {
 
     const loadData = async () => {
       try {
+        // Load locally-known reviewed appointments to avoid duplicate attempts
+        try {
+          const stored = window.localStorage.getItem(reviewedKey);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+              setReviewedAppointmentIds(new Set(parsed.map((x) => Number(x))));
+            }
+          }
+        } catch {
+          // ignore parse errors
+        }
+
+        // Best-effort: also load approved reviews (public). If API includes appointment_id in future,
+        // we can mark reviewed from it without backend changes.
+        try {
+          const r = await reviewService.getApprovedReviews({ limit: 200, offset: 0 });
+          const apiReviews = Array.isArray(r?.reviews) ? r.reviews : [];
+          const apiAppointmentIds = apiReviews
+            .map((rev) => rev.appointment_id)
+            .filter((id) => id !== undefined && id !== null)
+            .map((id) => Number(id));
+          if (apiAppointmentIds.length) {
+            setReviewedAppointmentIds((prev) => new Set([...Array.from(prev), ...apiAppointmentIds]));
+          }
+        } catch {
+          // ignore API errors; fallback to local marker + backend enforcement
+        }
+
         // Load doctors
         const doctorsData = await appointmentService.getDoctors();
         setDoctors(doctorsData.doctors || []);
@@ -228,22 +276,40 @@ function AppointmentsPage() {
                         <span>{apt.appointment_time}</span>
                       </div>
                     </div>
-                    <span
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                        apt.status === 'confirmed'
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                          : apt.status === 'completed'
-                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                          : apt.status === 'cancelled'
-                          ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
-                      }`}
-                    >
-                      {apt.status === 'confirmed' ? t('orders.confirmed') :
-                       apt.status === 'completed' ? t('appointments.completed') :
-                       apt.status === 'cancelled' ? t('orders.cancelled') :
-                       t('orders.pending')}
-                    </span>
+                    <div className="flex flex-col items-end gap-2">
+                      <span
+                        className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                          apt.status === 'confirmed'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                            : apt.status === 'completed'
+                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                            : apt.status === 'cancelled'
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                        }`}
+                      >
+                        {apt.status === 'confirmed' ? t('orders.confirmed') :
+                         apt.status === 'completed' ? t('appointments.completed') :
+                         apt.status === 'cancelled' ? t('orders.cancelled') :
+                         t('orders.pending')}
+                      </span>
+
+                      {apt.status === 'completed' && (
+                        reviewedSet.has(Number(apt.id)) ? (
+                          <span className="rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed">
+                            Reviewed
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/reviews-test?appointmentId=${apt.id}`)}
+                            className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600"
+                          >
+                            Add Review
+                          </button>
+                        )
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}

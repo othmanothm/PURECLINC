@@ -39,11 +39,8 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401 || error.response?.status === 403) {
-      // Clear auth and redirect to login
       window.localStorage.removeItem('pureskin_auth');
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
+      window.location.replace('/');
     }
     return Promise.reject(error);
   }

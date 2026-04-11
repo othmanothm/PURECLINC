@@ -34,6 +34,7 @@ router.post(
     body('sessionPrice').optional().isFloat({ min: 0 }).withMessage('sessionPrice must be a positive number'),
     body('amountPaid').optional().isFloat({ min: 0 }).withMessage('amountPaid must be a positive number'),
     body('notes').optional().isString(),
+    body('completeAppointment').optional().isBoolean().withMessage('completeAppointment must be a boolean'),
   ],
   validate,
   createOrUpdateTreatment

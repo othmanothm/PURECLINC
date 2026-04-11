@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../auth/AuthContext';
 import { appointmentService } from '../../services/appointmentService';
 import { orderService } from '../../services/orderService';
+import { patientService } from '../../services/patientService';
 
 function PatientDashboard() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [upcomingAppointment, setUpcomingAppointment] = useState(null);
-  const [recentOrder, setRecentOrder] = useState(null);
   const [stats, setStats] = useState({
     totalAppointments: 0,
     upcomingAppointments: 0,
@@ -28,27 +27,30 @@ function PatientDashboard() {
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // Load appointments
-        const appointmentsData = await appointmentService.getMyAppointments();
-        const appointments = appointmentsData.appointments || [];
-        const upcoming = appointments
-          .filter((apt) => apt.status !== 'cancelled' && apt.status !== 'completed')
-          .sort((a, b) => {
-            const dateA = new Date(`${a.appointment_date}T${a.appointment_time}`);
-            const dateB = new Date(`${b.appointment_date}T${b.appointment_time}`);
-            return dateA - dateB;
-          })[0];
-        setUpcomingAppointment(upcoming || null);
+        const [apRes, ordRes, billRes] = await Promise.allSettled([
+          appointmentService.getMyAppointments(),
+          orderService.getMyOrders(),
+          patientService.getMyBillingSummary(),
+        ]);
 
-        // Load orders
-        const ordersData = await orderService.getMyOrders();
-        const orders = ordersData.orders || [];
-        setRecentOrder(orders[0] || null);
+        const appointments =
+          apRes.status === 'fulfilled' ? apRes.value.appointments || [] : [];
+        const orders =
+          ordRes.status === 'fulfilled' ? ordRes.value.orders || [] : [];
 
-        // Calculate stats
-        const totalSpent = orders.reduce((sum, order) => {
-          return sum + parseFloat(order.total_price || 0);
-        }, 0);
+        let totalSpent = 0;
+        if (billRes.status === 'fulfilled') {
+          totalSpent = Number(billRes.value?.summary?.totalSpent ?? 0);
+        } else {
+          console.error('Failed to load billing summary for dashboard:', billRes.reason);
+        }
+
+        if (apRes.status === 'rejected') {
+          console.error('Failed to load appointments:', apRes.reason);
+        }
+        if (ordRes.status === 'rejected') {
+          console.error('Failed to load orders:', ordRes.reason);
+        }
 
         setStats({
           totalAppointments: appointments.length,
@@ -56,7 +58,7 @@ function PatientDashboard() {
             (apt) => apt.status !== 'cancelled' && apt.status !== 'completed'
           ).length,
           totalOrders: orders.length,
-          totalSpent: totalSpent,
+          totalSpent,
         });
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
@@ -67,12 +69,6 @@ function PatientDashboard() {
 
     loadDashboardData();
   }, [user?.id]);
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-cyan-50/50 to-sky-100/70 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4 py-8">
@@ -149,149 +145,28 @@ function PatientDashboard() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide opacity-90">{t('dashboard.totalSpent')}</p>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide opacity-90">{t('billing.totalSpent')}</p>
               <p className="text-3xl font-bold">${stats.totalSpent.toFixed(2)}</p>
             </div>
           </div>
         </div>
 
-        {/* Upcoming Appointment & Recent Order */}
-        <div className="mb-8 grid gap-4 md:grid-cols-2">
-          {upcomingAppointment ? (
-            <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg transition-all hover:shadow-xl">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-lg">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('dashboard.nextAppointment')}</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{upcomingAppointment.doctor_name}</p>
-                  </div>
-                </div>
-                <span
-                  className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
-                    upcomingAppointment.status === 'confirmed'
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                  }`}
-                >
-                  {upcomingAppointment.status}
-                </span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                  <span>{formatDate(upcomingAppointment.appointment_date)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>{upcomingAppointment.appointment_time}</span>
-                </div>
-              </div>
-              <Link
-                to="/patient/appointments"
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:scale-105"
-              >
-                {t('dashboard.viewDetails')}
-              </Link>
-            </div>
-          ) : (
-            <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700">
-                  <svg className="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                </div>
-                <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('dashboard.noUpcomingAppointments')}</p>
-                <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{t('dashboard.bookYourFirstAppointment')}</p>
-                <Link
-                  to="/patient/appointments"
-                  className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:scale-105"
-                >
-                  {t('dashboard.bookAppointment')}
-                </Link>
-              </div>
-            </div>
-          )}
-
-          {recentOrder ? (
-            <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg transition-all hover:shadow-xl">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5H3.75m0 0h-.75m15 0h-2.25m-2.5 0H6.75m-2.25 0v.75c0 .414-.336.75-.75.75h-.75M6 7.5v3m6-3v3m6-3v3m-9 7.5h10.5a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('dashboard.recentOrder')}</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('dashboard.orderNumber')}{recentOrder.id}</p>
-                  </div>
-                </div>
-                <span
-                  className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
-                    recentOrder.status === 'paid'
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : recentOrder.status === 'confirmed'
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                  }`}
-                >
-                  {recentOrder.status}
-                </span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600 dark:text-slate-300">{t('dashboard.total')}</span>
-                  <span className="text-lg font-bold text-slate-900 dark:text-slate-100">${parseFloat(recentOrder.total_price).toFixed(2)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                  <span>{formatDate(recentOrder.created_at)}</span>
-                </div>
-              </div>
-              <Link
-                to="/orders"
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:scale-105"
-              >
-                {t('dashboard.viewOrder')}
-              </Link>
-            </div>
-          ) : (
-            <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700">
-                  <svg className="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5H3.75m0 0h-.75m15 0h-2.25m-2.5 0H6.75m-2.25 0v.75c0 .414-.336.75-.75.75h-.75M6 7.5v3m6-3v3m6-3v3m-9 7.5h10.5a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
-                  </svg>
-                </div>
-                <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('dashboard.noOrders')}</p>
-                <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{t('dashboard.startShopping')}</p>
-                <Link
-                  to="/store"
-                  className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:scale-105"
-                >
-                  {t('dashboard.browseStore')}
-                </Link>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Quick Actions */}
         <div className="mb-8">
           <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-slate-100">{t('dashboard.quickActions')}</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <Link
+              to="/patient/billing"
+              className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg transition-all hover:scale-105 hover:shadow-xl"
+            >
+              <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg transition-transform group-hover:rotate-6">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5H3.75m0 0h-.75m15 0h-2.25m-2.5 0H6.75m-2.25 0v.75c0 .414-.336.75-.75.75h-.75M6 7.5v3m6-3v3m6-3v3m-9 7.5h10.5a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+                </svg>
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('common.billingSummary')}</p>
+              <p className="mt-2 text-xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">{t('doctor.view')}</p>
+            </Link>
             <Link
               to="/patient/appointments"
               className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg transition-all hover:scale-105 hover:shadow-xl"
@@ -371,6 +246,12 @@ function PatientDashboard() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
                 {t('dashboard.viewOrders')}
+              </Link>
+              <Link to="/patient/billing" className="flex items-center gap-3 rounded-lg p-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:bg-cyan-50 dark:hover:bg-slate-700 hover:text-cyan-600 dark:hover:text-cyan-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+                {t('common.billingSummary')}
               </Link>
             </div>
           </div>

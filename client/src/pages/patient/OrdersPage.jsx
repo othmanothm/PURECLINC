@@ -1,45 +1,138 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { orderService } from '../../services/orderService';
 
+function statusBadgeClass(status) {
+  switch (status) {
+    case 'awaiting_payment':
+      return 'bg-amber-100 text-amber-800';
+    case 'confirmed':
+      return 'bg-blue-100 text-blue-700';
+    case 'cancelled':
+      return 'bg-red-100 text-red-700';
+    case 'pending':
+      return 'bg-yellow-100 text-yellow-700';
+    default:
+      return 'bg-slate-100 text-slate-700';
+  }
+}
+
+function paymentBadgeClass(paymentStatus) {
+  switch (paymentStatus) {
+    case 'paid':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'failed':
+      return 'bg-red-100 text-red-800';
+    case 'refunded':
+      return 'bg-slate-200 text-slate-700';
+    default:
+      return 'bg-slate-100 text-slate-600';
+  }
+}
+
 function OrdersPage() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const hasLoadedRef = useRef(false);
 
+  const loadOrders = async () => {
+    setLoading(true);
+    try {
+      const data = await orderService.getMyOrders();
+      setOrders(data.orders || []);
+    } catch (err) {
+      console.error('Failed to load orders:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Only load once
     if (hasLoadedRef.current) return;
     hasLoadedRef.current = true;
+    loadOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    const loadOrders = async () => {
-      setLoading(true);
+  const stripeSessionId = searchParams.get('session_id');
+
+  // Stripe return: confirm payment via server (webhook), not URL alone
+  useEffect(() => {
+    if (!stripeSessionId) return undefined;
+
+    let attempts = 0;
+    const maxAttempts = 20;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
       try {
-        const data = await orderService.getMyOrders();
-        setOrders(data.orders || []);
-      } catch (err) {
-        console.error('Failed to load orders:', err);
-      } finally {
-        setLoading(false);
+        const data = await orderService.getOrderByCheckoutSession(stripeSessionId);
+        const order = data.order;
+        if (order.payment_status === 'paid') {
+          toast.success(t('orders.paymentSuccessful'));
+          localStorage.removeItem('pureskin_cart');
+          window.dispatchEvent(new CustomEvent('cartUpdated'));
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete('session_id');
+              return next;
+            },
+            { replace: true }
+          );
+          loadOrders();
+          return;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      attempts += 1;
+      if (attempts >= maxAttempts) {
+        toast.error(t('orders.paymentPending'));
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('session_id');
+            return next;
+          },
+          { replace: true }
+        );
       }
     };
 
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [stripeSessionId, setSearchParams, t]);
+
+  const codSuccess = searchParams.get('success');
+  const codOrderId = searchParams.get('orderId');
+
+  useEffect(() => {
+    if (codSuccess !== 'cod' || !codOrderId) return undefined;
+    toast.success(t('orders.orderPlacedCod'));
+    localStorage.removeItem('pureskin_cart');
+    window.dispatchEvent(new CustomEvent('cartUpdated'));
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('success');
+        next.delete('orderId');
+        return next;
+      },
+      { replace: true }
+    );
     loadOrders();
-    
-    // Check if redirected from Stripe success (only once on mount)
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') === 'true') {
-      toast.success(t('orders.paymentSuccessful'));
-      // Clear cart
-      localStorage.removeItem('pureskin_cart');
-      // Clean URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return undefined;
+  }, [codSuccess, codOrderId, setSearchParams, t]);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
@@ -49,8 +142,6 @@ function OrdersPage() {
       day: 'numeric',
     });
   };
-
-  const navigate = useNavigate();
 
   return (
     <div className="px-4 py-8 dark:bg-slate-900">
@@ -70,7 +161,7 @@ function OrdersPage() {
           <div className="space-y-4">
             {orders.map((order) => (
               <div key={order.id} className="group rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg transition-all hover:shadow-xl">
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-500">
                       <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -80,9 +171,6 @@ function OrdersPage() {
                     <div>
                       <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('orders.order')} #{order.id}</p>
                       <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                        </svg>
                         <span>{formatDate(order.created_at)}</span>
                       </div>
                     </div>
@@ -91,19 +179,14 @@ function OrdersPage() {
                     <p className="text-2xl font-bold bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
                       ${parseFloat(order.total_price).toFixed(2)}
                     </p>
-                    <span
-                      className={`mt-2 inline-block rounded-full px-3 py-1.5 text-xs font-semibold ${
-                        order.status === 'paid'
-                          ? 'bg-green-100 text-green-700'
-                          : order.status === 'confirmed'
-                          ? 'bg-blue-100 text-blue-700'
-                          : order.status === 'cancelled'
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-yellow-100 text-yellow-700'
-                      }`}
-                    >
-                      {order.status}
-                    </span>
+                    <div className="mt-2 flex flex-wrap justify-end gap-2">
+                      <span className={`inline-block rounded-full px-3 py-1.5 text-xs font-semibold ${statusBadgeClass(order.status)}`}>
+                        {order.status}
+                      </span>
+                      <span className={`inline-block rounded-full px-3 py-1.5 text-xs font-semibold ${paymentBadgeClass(order.payment_status)}`}>
+                        {t('orders.payment')}: {order.payment_status}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-xl bg-sky-50 dark:bg-slate-700 p-4">
@@ -114,7 +197,7 @@ function OrdersPage() {
                       const finalPrice = parseFloat(item.price);
                       const discountPercentage = parseFloat(item.discount_percentage || 0);
                       const hasDiscount = discountPercentage > 0 && originalPrice > finalPrice;
-                      
+
                       return (
                         <li key={idx} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm">
                           <div className="flex-1">
@@ -136,11 +219,6 @@ function OrdersPage() {
                             <span className="font-semibold text-slate-900">
                               ${(finalPrice * item.quantity).toFixed(2)}
                             </span>
-                            {hasDiscount && (
-                              <p className="mt-0.5 text-xs text-slate-500">
-                                ${finalPrice.toFixed(2)} each
-                              </p>
-                            )}
                           </div>
                         </li>
                       );
@@ -157,4 +235,3 @@ function OrdersPage() {
 }
 
 export default OrdersPage;
-

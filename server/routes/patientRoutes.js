@@ -7,6 +7,7 @@ const {
   getMyProfile,
   updateMyProfile,
   updateMyMedicalRecord,
+  getMyBillingSummary,
 } = require('../controllers/patientController');
 
 const router = express.Router();
@@ -17,6 +18,9 @@ router.use(roleMiddleware('patient'));
 
 // GET /api/patients/me - get current patient profile + medical record
 router.get('/me', getMyProfile);
+
+// GET /api/patients/me/billing-summary - treatment sessions, store orders, summary (patient)
+router.get('/me/billing-summary', getMyBillingSummary);
 
 // PUT /api/patients/me/profile - update patient profile
 router.put(

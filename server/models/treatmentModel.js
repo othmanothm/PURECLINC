@@ -1,5 +1,14 @@
 const { getDb } = require('../config/db');
 
+/**
+ * SQL predicate: session qualifies as documented treatment for appointment completion.
+ * Keep in sync with appointment completion gate / doctor list EXISTS subquery.
+ * @param {string} alias - table alias (e.g. 'ts')
+ */
+function treatmentSessionEvidencePredicate(alias = 'ts') {
+  return `(${alias}.session_price > 0 OR ${alias}.amount_paid > 0 OR CHAR_LENGTH(TRIM(COALESCE(${alias}.notes, ''))) >= 3)`;
+}
+
 async function getTreatmentByAppointmentId(appointmentId) {
   const db = getDb();
   const [rows] = await db.query(
@@ -55,12 +64,26 @@ async function getTreatmentById(treatmentId) {
   return rows[0] || null;
 }
 
+async function appointmentHasTreatmentEvidenceForCompletion(appointmentId) {
+  const db = getDb();
+  const ev = treatmentSessionEvidencePredicate('ts');
+  const [[row]] = await db.query(
+    `SELECT COUNT(*) AS cnt FROM TreatmentSessions ts
+     WHERE ts.appointment_id = ? AND ${ev}`,
+    [appointmentId]
+  );
+  return Number(row.cnt) > 0;
+}
+
 async function getPatientTreatments(patientId) {
   const db = getDb();
   const [rows] = await db.query(
-    `SELECT ts.*, a.appointment_date, a.appointment_time, a.status as appointment_status
+    `SELECT ts.*, a.appointment_date, a.appointment_time, a.status as appointment_status,
+            u.name AS doctor_name
      FROM TreatmentSessions ts
      JOIN Appointments a ON ts.appointment_id = a.id
+     JOIN Doctors d ON a.doctor_id = d.id
+     JOIN Users u ON d.user_id = u.id
      WHERE a.patient_id = ?
      ORDER BY a.appointment_date DESC, a.appointment_time DESC`,
     [patientId]
@@ -69,10 +92,11 @@ async function getPatientTreatments(patientId) {
 }
 
 module.exports = {
+  treatmentSessionEvidencePredicate,
   getTreatmentByAppointmentId,
   createTreatment,
   updateTreatment,
   getTreatmentById,
   getPatientTreatments,
+  appointmentHasTreatmentEvidenceForCompletion,
 };
-

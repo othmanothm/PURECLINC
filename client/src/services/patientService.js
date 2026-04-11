@@ -15,5 +15,10 @@ export const patientService = {
     const response = await api.put('/patients/me/medical-record', data);
     return response.data;
   },
+
+  async getMyBillingSummary() {
+    const response = await api.get('/patients/me/billing-summary');
+    return response.data;
+  },
 };
 

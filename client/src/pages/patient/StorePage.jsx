@@ -64,7 +64,12 @@ function StorePage() {
       : parseFloat(product.price);
 
     if (existingIndex >= 0) {
-      cart[existingIndex].quantity += quantity;
+      const maxStock = product.stock || 0;
+      const nextQty = cart[existingIndex].quantity + quantity;
+      cart[existingIndex].quantity = Math.min(nextQty, maxStock);
+      if (nextQty > maxStock) {
+        toast.error(t('store.insufficientStock', { stock: maxStock }));
+      }
     } else {
       cart.push({
         productId: parseInt(product.id, 10),

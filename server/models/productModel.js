@@ -1,9 +1,13 @@
 const { getDb } = require('../config/db');
 
-async function getAllProducts({ category, search, limit = 50, offset = 0 } = {}) {
+async function getAllProducts({ category, search, limit = 50, offset = 0, includeInactive = false } = {}) {
   const db = getDb();
   let query = 'SELECT * FROM Products WHERE 1=1';
   const params = [];
+
+  if (!includeInactive) {
+    query += ' AND (is_active = 1 OR is_active IS NULL)';
+  }
 
   if (category) {
     query += ' AND category = ?';
@@ -33,18 +37,53 @@ async function getProductById(productId) {
 
 async function createProduct(data) {
   const db = getDb();
-  const { name, description, category, price, stock, imageUrl, discountPercentage } = data;
+  const {
+    name,
+    description,
+    shortDescription,
+    category,
+    price,
+    stock,
+    imageUrl,
+    discountPercentage,
+    isActive,
+    lowStockThreshold,
+  } = data;
   const [result] = await db.query(
-    `INSERT INTO Products (name, description, category, price, discount_percentage, stock, image_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [name, description, category, price, discountPercentage || 0, stock || 0, imageUrl || null]
+    `INSERT INTO Products (name, description, short_description, category, price, discount_percentage, stock, low_stock_threshold, image_url, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      name,
+      description,
+      shortDescription ?? null,
+      category,
+      price,
+      discountPercentage || 0,
+      stock || 0,
+      lowStockThreshold === undefined || lowStockThreshold === '' || lowStockThreshold === null
+        ? null
+        : parseInt(lowStockThreshold, 10),
+      imageUrl || null,
+      isActive !== undefined && isActive !== null ? (isActive ? 1 : 0) : 1,
+    ]
   );
   return { id: result.insertId, ...data };
 }
 
 async function updateProduct(productId, data) {
   const db = getDb();
-  const { name, description, category, price, stock, imageUrl, discountPercentage } = data;
+  const {
+    name,
+    description,
+    shortDescription,
+    category,
+    price,
+    stock,
+    imageUrl,
+    discountPercentage,
+    isActive,
+    lowStockThreshold,
+  } = data;
   const updates = [];
   const params = [];
 
@@ -55,6 +94,10 @@ async function updateProduct(productId, data) {
   if (description !== undefined) {
     updates.push('description = ?');
     params.push(description);
+  }
+  if (shortDescription !== undefined) {
+    updates.push('short_description = ?');
+    params.push(shortDescription);
   }
   if (category !== undefined) {
     updates.push('category = ?');
@@ -75,6 +118,16 @@ async function updateProduct(productId, data) {
   if (imageUrl !== undefined) {
     updates.push('image_url = ?');
     params.push(imageUrl);
+  }
+  if (isActive !== undefined) {
+    updates.push('is_active = ?');
+    params.push(isActive ? 1 : 0);
+  }
+  if (lowStockThreshold !== undefined) {
+    updates.push('low_stock_threshold = ?');
+    params.push(
+      lowStockThreshold === '' || lowStockThreshold === null ? null : parseInt(lowStockThreshold, 10)
+    );
   }
 
   if (updates.length === 0) {
@@ -97,19 +150,21 @@ async function checkProductHasOrders(productId) {
 
 async function deleteProduct(productId) {
   const db = getDb();
-  
-  // Check if product has orders
+
   const hasOrders = await checkProductHasOrders(productId);
   if (hasOrders) {
     const error = new Error('Cannot delete product: it is associated with existing orders');
     error.code = 'PRODUCT_HAS_ORDERS';
     throw error;
   }
-  
+
   await db.query('DELETE FROM Products WHERE id = ?', [productId]);
   return true;
 }
 
+/**
+ * @deprecated Prefer decrementStockGuarded — blind decrement can go negative.
+ */
 async function updateProductStock(productId, quantity) {
   const db = getDb();
   await db.query('UPDATE Products SET stock = stock - ? WHERE id = ?', [
@@ -119,6 +174,50 @@ async function updateProductStock(productId, quantity) {
   return getProductById(productId);
 }
 
+/**
+ * @param {import('mysql2/promise').PoolConnection} connection
+ * @returns {Promise<number>} affected rows (1 if success, 0 if insufficient stock)
+ */
+async function decrementStockGuarded(connection, productId, quantity) {
+  const [result] = await connection.query(
+    'UPDATE Products SET stock = stock - ? WHERE id = ? AND stock >= ?',
+    [quantity, productId, quantity]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * @param {import('mysql2/promise').PoolConnection} connection
+ */
+async function incrementStock(connection, productId, quantity) {
+  await connection.query('UPDATE Products SET stock = stock + ? WHERE id = ?', [
+    quantity,
+    productId,
+  ]);
+}
+
+async function recordStockAdjustment(connection, { productId, delta, reason, userId }) {
+  await connection.query(
+    `INSERT INTO ProductStockAdjustments (product_id, delta, reason, created_by_user_id) VALUES (?, ?, ?, ?)`,
+    [productId, delta, reason || null, userId]
+  );
+}
+
+/** Products at or below low-stock threshold (global default 5 when threshold NULL). */
+async function getLowStockProducts(limit = 25) {
+  const db = getDb();
+  const [rows] = await db.query(
+    `SELECT * FROM Products WHERE stock > 0 AND (
+      (low_stock_threshold IS NOT NULL AND stock <= low_stock_threshold) OR
+      (low_stock_threshold IS NULL AND stock <= 5)
+    ) AND (is_active = 1 OR is_active IS NULL)
+    ORDER BY stock ASC
+    LIMIT ?`,
+    [limit]
+  );
+  return rows;
+}
+
 module.exports = {
   getAllProducts,
   getProductById,
@@ -126,5 +225,8 @@ module.exports = {
   updateProduct,
   deleteProduct,
   updateProductStock,
+  decrementStockGuarded,
+  incrementStock,
+  recordStockAdjustment,
+  getLowStockProducts,
 };
-

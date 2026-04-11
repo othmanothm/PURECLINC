@@ -70,6 +70,7 @@ function DashboardStats() {
     {
       label: totalSalesLabel,
       value: `$${(stats.totalSales || 0).toFixed(2)}`,
+      hint: t('admin.totalSalesHint') || '',
       gradient: 'from-purple-500 to-pink-600',
       icon: (
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5H3.75m0 0h-.75m15 0h-2.25m-2.5 0H6.75m-2.25 0v.75c0 .414-.336.75-.75.75h-.75M6 7.5v3m6-3v3m6-3v3m-9 7.5h10.5a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
@@ -115,6 +116,9 @@ function DashboardStats() {
             </div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-90">{card.label}</p>
             <p className="text-3xl font-bold">{card.value}</p>
+            {card.hint ? (
+              <p className="mt-2 max-w-[14rem] text-[10px] font-medium leading-snug opacity-80">{card.hint}</p>
+            ) : null}
           </div>
         </div>
       ))}
@@ -167,6 +171,15 @@ function AdminDashboard() {
       gradient: 'from-amber-500 to-orange-500',
       textGradient: 'from-amber-600 to-orange-600',
     },
+    {
+      path: '/admin/patient-history',
+      label: t('common.patientHistory'),
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+      ),
+      gradient: 'from-cyan-500 to-blue-600',
+      textGradient: 'from-cyan-600 to-blue-600',
+    },
   ], [t]);
 
   return (
@@ -181,7 +194,7 @@ function AdminDashboard() {
 
         <DashboardStats />
 
-        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {managementLinks.map((link) => (
             <Link
               key={link.path}

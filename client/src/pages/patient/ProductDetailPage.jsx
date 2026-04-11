@@ -34,20 +34,27 @@ function ProductDetailPage() {
     const cart = JSON.parse(localStorage.getItem('pureskin_cart') || '[]');
     const existingIndex = cart.findIndex((item) => item.productId === product.id);
 
-    if (existingIndex >= 0) {
-      cart[existingIndex].quantity += quantity;
-    } else {
-      // Calculate final price with discount
-      const finalPrice = product.discount_percentage > 0
+    const finalPrice =
+      product.discount_percentage > 0
         ? parseFloat(product.price) * (1 - parseFloat(product.discount_percentage) / 100)
         : parseFloat(product.price);
-      
+
+    if (existingIndex >= 0) {
+      const maxStock = product.stock || 0;
+      const nextQty = cart[existingIndex].quantity + parseInt(quantity, 10);
+      cart[existingIndex].quantity = Math.min(nextQty, maxStock);
+      if (nextQty > maxStock) {
+        toast.error(t('store.insufficientStock', { stock: maxStock }));
+      }
+    } else {
       cart.push({
-        productId: parseInt(product.id, 10), // Ensure it's an integer
+        productId: parseInt(product.id, 10),
         name: product.name,
-        price: finalPrice, // Use discounted price
+        price: finalPrice,
+        originalPrice: parseFloat(product.price),
+        discountPercentage: parseFloat(product.discount_percentage || 0),
         image: product.image_url,
-        quantity: parseInt(quantity, 10), // Ensure it's an integer
+        quantity: parseInt(quantity, 10),
       });
     }
 
@@ -75,7 +82,7 @@ function ProductDetailPage() {
             )}
             {product.stock > 0 && product.stock <= 5 && (
               <div className="absolute top-4 right-4 z-10 rounded-full bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-lg">
-                {t('store.comingSoon')}
+                {t('store.lowStock', { stock: product.stock })}
               </div>
             )}
             {product.image_url ? (

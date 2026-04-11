@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { doctorService } from '../../services/doctorService';
@@ -8,6 +8,9 @@ function PatientRecordPage() {
   const { t } = useTranslation();
   const { patientId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightAppointmentId = searchParams.get('highlightAppointment');
+  const highlightHandledRef = useRef(false);
   const [patient, setPatient] = useState(null);
   const [medicalRecord, setMedicalRecord] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -18,10 +21,39 @@ function PatientRecordPage() {
   const [saving, setSaving] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [treatmentForm, setTreatmentForm] = useState({ sessionPrice: '', amountPaid: '', notes: '' });
+  const [completeAfterSave, setCompleteAfterSave] = useState(false);
 
   useEffect(() => {
     loadPatientRecord();
   }, [patientId]);
+
+  useEffect(() => {
+    highlightHandledRef.current = false;
+  }, [patientId, highlightAppointmentId]);
+
+  useEffect(() => {
+    if (!highlightAppointmentId || highlightHandledRef.current) return;
+    if (appointments.length === 0) return;
+    const el = document.getElementById(`appointment-card-${highlightAppointmentId}`);
+    highlightHandledRef.current = true;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('highlightAppointment');
+        return next;
+      },
+      { replace: true }
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-amber-400', 'rounded-lg');
+      const timer = setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-amber-400', 'rounded-lg');
+      }, 4500);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [highlightAppointmentId, appointments, setSearchParams]);
 
   const loadPatientRecord = async () => {
     setLoading(true);
@@ -42,6 +74,7 @@ function PatientRecordPage() {
 
   const handleEditTreatment = (appointment) => {
     setEditingTreatment(appointment.id);
+    setCompleteAfterSave(false);
     if (appointment.treatment) {
       setTreatmentForm({
         sessionPrice: appointment.treatment.session_price || '',
@@ -53,18 +86,23 @@ function PatientRecordPage() {
     }
   };
 
-  const handleSaveTreatment = async (appointmentId) => {
+  const handleSaveTreatment = async (apt) => {
     setSaving(true);
     try {
-      await doctorService.createOrUpdateTreatment(appointmentId, {
+      const data = await doctorService.createOrUpdateTreatment(apt.id, {
         sessionPrice: parseFloat(treatmentForm.sessionPrice) || 0,
         amountPaid: parseFloat(treatmentForm.amountPaid) || 0,
         notes: treatmentForm.notes || '',
+        completeAppointment: Boolean(completeAfterSave && apt.status === 'confirmed'),
       });
       setEditingTreatment(null);
       setTreatmentForm({ sessionPrice: '', amountPaid: '', notes: '' });
+      setCompleteAfterSave(false);
       loadPatientRecord();
       toast.success(t('doctor.treatmentSessionSaved'));
+      if (data.appointment) {
+        toast.success(t('doctor.appointmentStatusUpdated'));
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || t('doctor.failedToSaveTreatment'));
     } finally {
@@ -244,7 +282,11 @@ function PatientRecordPage() {
                   const remaining = treatment ? parseFloat(treatment.session_price) - parseFloat(treatment.amount_paid) : 0;
 
                   return (
-                    <div key={apt.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                    <div
+                      key={apt.id}
+                      id={`appointment-card-${apt.id}`}
+                      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-600 dark:bg-slate-800"
+                    >
                       <div className="mb-4 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-sky-100">
@@ -313,9 +355,20 @@ function PatientRecordPage() {
                               />
                             </div>
                           </div>
+                          {apt.status === 'confirmed' && (
+                            <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                checked={completeAfterSave}
+                                onChange={(e) => setCompleteAfterSave(e.target.checked)}
+                              />
+                              <span>{t('doctor.markCompleteAfterTreatment')}</span>
+                            </label>
+                          )}
                           <div className="mt-4 flex gap-2">
                             <button
-                              onClick={() => handleSaveTreatment(apt.id)}
+                              onClick={() => handleSaveTreatment(apt)}
                               disabled={saving}
                               className="rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md transition-all hover:scale-105 disabled:opacity-60"
                             >

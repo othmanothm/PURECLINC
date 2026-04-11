@@ -12,12 +12,18 @@ function ProductsPage() {
   const [form, setForm] = useState({
     name: '',
     description: '',
+    shortDescription: '',
     category: 'Skin Care',
     price: '',
     stock: '',
     imageUrl: '',
     discountPercentage: '',
+    lowStockThreshold: '',
+    isActive: true,
   });
+  const [stockAdjustId, setStockAdjustId] = useState(null);
+  const [adjDelta, setAdjDelta] = useState('');
+  const [adjReason, setAdjReason] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -55,11 +61,14 @@ function ProductsPage() {
     setForm({
       name: '',
       description: '',
+      shortDescription: '',
       category: 'Skin Care',
       price: '',
       stock: '',
       imageUrl: '',
       discountPercentage: '',
+      lowStockThreshold: '',
+      isActive: true,
     });
     setSelectedImage(null);
     setImagePreview(null);
@@ -71,11 +80,17 @@ function ProductsPage() {
     setForm({
       name: product.name || '',
       description: product.description || '',
+      shortDescription: product.short_description || '',
       category: product.category || 'Skin Care',
       price: product.price || '',
       stock: product.stock || '',
       imageUrl: product.image_url || '',
       discountPercentage: product.discount_percentage || '',
+      lowStockThreshold:
+        product.low_stock_threshold != null && product.low_stock_threshold !== ''
+          ? String(product.low_stock_threshold)
+          : '',
+      isActive: product.is_active === undefined || Number(product.is_active) === 1,
     });
     setImagePreview(product.image_url || null);
     setShowCreateForm(true);
@@ -87,11 +102,18 @@ function ProductsPage() {
       const formData = new FormData();
       formData.append('name', form.name);
       formData.append('description', form.description);
+      if (form.shortDescription) {
+        formData.append('shortDescription', form.shortDescription);
+      }
       formData.append('category', form.category);
       formData.append('price', parseFloat(form.price));
       formData.append('stock', parseInt(form.stock) || 0);
       formData.append('discountPercentage', parseFloat(form.discountPercentage) || 0);
-      
+      formData.append('isActive', form.isActive ? 'true' : 'false');
+      if (form.lowStockThreshold !== '' && form.lowStockThreshold != null) {
+        formData.append('lowStockThreshold', parseInt(form.lowStockThreshold, 10));
+      }
+
       // If image file is selected, append it; otherwise append imageUrl
       if (selectedImage) {
         formData.append('image', selectedImage);
@@ -117,6 +139,27 @@ function ProductsPage() {
       loadProducts();
     } catch (err) {
       toast.error(err.response?.data?.message || (editingProduct ? t('admin.failedToUpdateProduct') : t('admin.failedToCreateProduct')));
+    }
+  };
+
+  const submitStockAdjust = async (productId) => {
+    const d = parseInt(adjDelta, 10);
+    if (adjDelta === '' || Number.isNaN(d) || d === 0) {
+      toast.error(t('admin.stockDeltaInvalid') || 'Enter a non-zero whole number for adjustment');
+      return;
+    }
+    try {
+      await adminService.adjustProductStock(productId, {
+        delta: d,
+        reason: adjReason.trim() || undefined,
+      });
+      toast.success(t('admin.stockAdjusted') || 'Stock updated');
+      setStockAdjustId(null);
+      setAdjDelta('');
+      setAdjReason('');
+      loadProducts();
+    } catch (err) {
+      toast.error(err.response?.data?.message || t('admin.stockAdjustFailed') || 'Stock adjustment failed');
     }
   };
 
@@ -200,6 +243,14 @@ function ProductsPage() {
                 onChange={(e) => setForm({ ...form, stock: e.target.value })}
                 className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
               />
+              <input
+                type="number"
+                min="0"
+                placeholder={t('admin.lowStockThreshold') || 'Low-stock alert threshold (optional)'}
+                value={form.lowStockThreshold}
+                onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })}
+                className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+              />
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                   {t('common.image')}
@@ -238,6 +289,13 @@ function ProductsPage() {
                   />
                 </div>
               </div>
+              <input
+                type="text"
+                placeholder={t('admin.shortDescription') || 'Short description (storefront teaser)'}
+                value={form.shortDescription}
+                onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
+                className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm md:col-span-2"
+              />
               <textarea
                 placeholder={t('common.description')}
                 value={form.description}
@@ -245,6 +303,15 @@ function ProductsPage() {
                 rows={3}
                 className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm md:col-span-2"
               />
+              <label className="flex cursor-pointer items-center gap-2 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-300">{t('admin.activeInStore')}</span>
+              </label>
             </div>
             <button
               type="submit"
@@ -261,7 +328,12 @@ function ProductsPage() {
           <p className="text-center text-slate-500 dark:text-slate-400">{t('store.noProducts')}</p>
         ) : (
           <div className="grid gap-4 md:grid-cols-3">
-            {products.map((product) => (
+            {products.map((product) => {
+              const lowThr =
+                product.low_stock_threshold != null && product.low_stock_threshold !== ''
+                  ? Number(product.low_stock_threshold)
+                  : 5;
+              return (
               <div key={product.id} className="rounded-lg bg-white dark:bg-slate-800 p-4 shadow-sm">
                 {product.image_url && (
                   <img
@@ -270,7 +342,26 @@ function ProductsPage() {
                     className="mb-3 h-48 w-full rounded-lg object-cover"
                   />
                 )}
-                <h3 className="font-semibold dark:text-slate-100">{product.name}</h3>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <h3 className="font-semibold dark:text-slate-100">{product.name}</h3>
+                  <div className="flex flex-wrap gap-1">
+                    {product.is_active === 0 || product.is_active === false ? (
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-600 dark:text-slate-200">
+                        {t('admin.hiddenFromStore')}
+                      </span>
+                    ) : null}
+                    {product.stock > 0 && product.stock <= lowThr ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                        {t('admin.lowStock')}
+                      </span>
+                    ) : null}
+                    {product.stock === 0 ? (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200">
+                        {t('store.outOfStock')}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{product.category}</p>
                 <div className="mt-2">
                   {product.discount_percentage > 0 ? (
@@ -291,13 +382,70 @@ function ProductsPage() {
                     <p className="text-lg font-bold text-sky-600 dark:text-sky-400">${parseFloat(product.price).toFixed(2)}</p>
                   )}
                 </div>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('common.stock')}: {product.stock}</p>
-                <div className="mt-3 flex gap-2">
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {t('common.stock')}: {product.stock}
+                  {product.low_stock_threshold != null && product.low_stock_threshold !== '' ? (
+                    <span className="ml-2 text-slate-400">({t('admin.threshold') || 'threshold'} {product.low_stock_threshold})</span>
+                  ) : null}
+                </p>
+                {stockAdjustId === product.id && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-900/40">
+                    <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t('admin.adjustStock') || 'Adjust stock'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="number"
+                        placeholder="+10 / -2"
+                        value={adjDelta}
+                        onChange={(e) => setAdjDelta(e.target.value)}
+                        className="w-28 rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-700"
+                      />
+                      <input
+                        type="text"
+                        placeholder={t('admin.adjustReason') || 'Reason (optional)'}
+                        value={adjReason}
+                        onChange={(e) => setAdjReason(e.target.value)}
+                        className="min-w-[140px] flex-1 rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => submitStockAdjust(product.id)}
+                        className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                      >
+                        {t('common.apply') || 'Apply'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStockAdjustId(null);
+                          setAdjDelta('');
+                          setAdjReason('');
+                        }}
+                        className="rounded bg-slate-400 px-3 py-1 text-xs text-white hover:bg-slate-500"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     onClick={() => handleEdit(product)}
                     className="flex-1 rounded bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 transition-colors"
                   >
                     {t('common.edit')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      stockAdjustId === product.id
+                        ? (setStockAdjustId(null), setAdjDelta(''), setAdjReason(''))
+                        : (setStockAdjustId(product.id), setAdjDelta(''), setAdjReason(''))
+                    }
+                    className="flex-1 rounded bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 transition-colors"
+                  >
+                    {t('admin.adjustStock') || 'Adjust'}
                   </button>
                   <button
                     onClick={() => handleDelete(product.id)}
@@ -307,7 +455,8 @@ function ProductsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

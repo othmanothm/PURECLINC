@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
+import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
 
 const AuthContext = createContext(null);
@@ -7,6 +8,7 @@ const AuthContext = createContext(null);
 const STORAGE_KEY = 'pureskin_auth';
 
 export function AuthProvider({ children }) {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,14 +36,16 @@ export function AuthProvider({ children }) {
                   name: userData.name,
                   email: userData.email,
                   role: userData.role,
+                  ...(userData.role === 'admin' ? { admin_role: userData.admin_role ?? null } : {}),
                 });
               } else {
                 setUser(null);
               }
               setToken(parsed.token);
             } catch {
-              // Token invalid, clear storage
               window.localStorage.removeItem(STORAGE_KEY);
+              setUser(null);
+              setToken(null);
             }
           } else {
             // If no token but user exists, normalize user object
@@ -52,6 +56,7 @@ export function AuthProvider({ children }) {
                 name: userData.name || '',
                 email: userData.email || '',
                 role: userData.role || '',
+                ...(userData.role === 'admin' ? { admin_role: userData.admin_role ?? null } : {}),
               });
             } else {
               setUser(null);
@@ -60,6 +65,8 @@ export function AuthProvider({ children }) {
           }
         } catch {
           window.localStorage.removeItem(STORAGE_KEY);
+          setUser(null);
+          setToken(null);
         }
       }
       setLoading(false);
@@ -77,6 +84,7 @@ export function AuthProvider({ children }) {
         name: authUser.name,
         email: authUser.email,
         role: authUser.role,
+        ...(authUser.role === 'admin' ? { admin_role: authUser.admin_role ?? null } : {}),
       });
     } else {
       setUser(null);
@@ -91,7 +99,8 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUser(null);
     window.localStorage.removeItem(STORAGE_KEY);
-  }, []);
+    navigate('/', { replace: true });
+  }, [navigate]);
 
   // Memoize user object to prevent unnecessary re-renders
   // Only recreate if user properties actually change
@@ -104,12 +113,13 @@ export function AuthProvider({ children }) {
         name: user.name || '',
         email: user.email || '',
         role: user.role || '',
+        ...(user.role === 'admin' ? { admin_role: user.admin_role ?? null } : {}),
       };
     } catch (error) {
       console.error('Error memoizing user:', error);
       return null;
     }
-  }, [user?.id, user?.name, user?.email, user?.role]);
+  }, [user?.id, user?.name, user?.email, user?.role, user?.admin_role]);
 
   // Memoize value object to prevent unnecessary re-renders
   // Only recreate if actual values change

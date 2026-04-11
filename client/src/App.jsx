@@ -9,6 +9,7 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import PatientDashboard from './pages/patient/PatientDashboard';
+import PatientBillingPage from './pages/patient/PatientBillingPage';
 import MedicalProfilePage from './pages/patient/MedicalProfilePage';
 import AppointmentsPage from './pages/patient/AppointmentsPage';
 import MessagesPage from './pages/patient/MessagesPage';
@@ -25,7 +26,9 @@ import UsersPage from './pages/admin/UsersPage';
 import DoctorsPage from './pages/admin/DoctorsPage';
 import ProductsPage from './pages/admin/ProductsPage';
 import AdminOrdersPage from './pages/admin/OrdersPage';
+import AdminPatientHistoryPage from './pages/admin/AdminPatientHistoryPage';
 import SettingsPage from './pages/SettingsPage';
+import ReviewsTestPage from './pages/ReviewsTestPage';
 
 function App() {
   return (
@@ -63,6 +66,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/reviews-test" element={<ReviewsTestPage />} />
 
           {/* Patient */}
           <Route
@@ -81,6 +85,16 @@ function App() {
               <ProtectedRoute role="patient">
                 <Layout>
                   <MedicalProfilePage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/patient/billing"
+            element={
+              <ProtectedRoute role="patient">
+                <Layout>
+                  <PatientBillingPage />
                 </Layout>
               </ProtectedRoute>
             }
@@ -257,6 +271,16 @@ function App() {
               <ProtectedRoute role="admin">
                 <Layout>
                   <AdminOrdersPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/patient-history"
+            element={
+              <ProtectedRoute role="admin">
+                <Layout>
+                  <AdminPatientHistoryPage />
                 </Layout>
               </ProtectedRoute>
             }

@@ -1,4 +1,5 @@
 const { findUserById, findUserByEmail } = require('../models/userModel');
+const { getReviewsByPatientUserId, getReviewById, deleteReviewById } = require('../models/reviewModel');
 const { getAllDoctors, createDoctor, updateDoctor } = require('../models/doctorModel');
 const { getAllProducts, createProduct, updateProduct, deleteProduct } = require('../models/productModel');
 const { getAllOrders } = require('../models/orderModel');
@@ -16,10 +17,16 @@ async function getStats(req, res, next) {
     // Total appointments
     const [appointmentsCount] = await db.query('SELECT COUNT(*) as count FROM Appointments');
 
-    // Total sales (paid orders)
-    const [salesResult] = await db.query(
-      "SELECT COALESCE(SUM(total_price), 0) as total FROM Orders WHERE status = 'paid'"
+    // Total sales: paid store orders + amount collected on treatment sessions
+    const [storeSalesRow] = await db.query(
+      `SELECT COALESCE(SUM(total_price), 0) AS total FROM Orders
+       WHERE payment_status = 'paid' AND status != 'cancelled'`
     );
+    const [treatmentPaidRow] = await db.query(
+      `SELECT COALESCE(SUM(amount_paid), 0) AS total FROM TreatmentSessions`
+    );
+    const totalSales =
+      parseFloat(storeSalesRow[0].total || 0) + parseFloat(treatmentPaidRow[0].total || 0);
 
     // Recent orders (last 7 days)
     const [recentOrders] = await db.query(
@@ -31,8 +38,63 @@ async function getStats(req, res, next) {
       stats: {
         totalPatients: patientsCount[0].count,
         totalAppointments: appointmentsCount[0].count,
-        totalSales: parseFloat(salesResult[0].total || 0),
+        totalSales,
         recentOrders: recentOrders[0].count,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Minimal list for patient financial history picker (Users.id for patients). */
+async function getPatientUserOptions(req, res, next) {
+  try {
+    const db = getDb();
+    const [rows] = await db.query(
+      `SELECT u.id, u.name, u.email FROM Users u
+       WHERE u.role = 'patient'
+       ORDER BY u.name ASC
+       LIMIT 500`
+    );
+    return res.json({ users: rows });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Recent store activity + low stock — for admin dashboard widgets */
+async function getStoreSummary(req, res, next) {
+  try {
+    const db = getDb();
+    const [lowStockProducts] = await db.query(
+      `SELECT id, name, stock, low_stock_threshold, is_active
+       FROM Products
+       WHERE stock > 0 AND (
+         (low_stock_threshold IS NOT NULL AND stock <= low_stock_threshold) OR
+         (low_stock_threshold IS NULL AND stock <= 5)
+       )
+       ORDER BY stock ASC
+       LIMIT 12`
+    );
+    const [recentOrders] = await db.query(
+      `SELECT o.id, o.total_price, o.status, o.payment_status, o.created_at,
+              u.name AS patient_name, u.email AS patient_email
+       FROM Orders o
+       JOIN Patients p ON o.patient_id = p.id
+       JOIN Users u ON p.user_id = u.id
+       ORDER BY o.created_at DESC
+       LIMIT 8`
+    );
+    const [paidRow] = await db.query(
+      `SELECT COALESCE(SUM(total_price), 0) AS total FROM Orders
+       WHERE payment_status = 'paid' AND status != 'cancelled'`
+    );
+    return res.json({
+      summary: {
+        lowStockProducts,
+        recentOrders,
+        paidOrdersRevenue: parseFloat(paidRow[0].total || 0),
       },
     });
   } catch (err) {
@@ -137,6 +199,38 @@ async function deleteUser(req, res, next) {
     const db = getDb();
     await db.query('DELETE FROM Users WHERE id = ?', [id]);
     return res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function getPatientUserReviews(req, res, next) {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (user.role !== 'patient') {
+      return res.status(400).json({ message: 'User is not a patient' });
+    }
+    const statusFilter = req.query.status === undefined || req.query.status === '' ? 'all' : req.query.status;
+    const reviews = await getReviewsByPatientUserId(userId, { status: statusFilter });
+    return res.json({ reviews });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function deleteAdminReview(req, res, next) {
+  try {
+    const reviewId = parseInt(req.params.reviewId, 10);
+    const existing = await getReviewById(reviewId);
+    if (!existing) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+    await deleteReviewById(reviewId);
+    return res.json({ message: 'Review deleted successfully' });
   } catch (err) {
     return next(err);
   }
@@ -260,9 +354,13 @@ async function deleteDoctorController(req, res, next) {
 
 module.exports = {
   getStats,
+  getPatientUserOptions,
+  getStoreSummary,
   getAllUsers,
   updateUser,
   deleteUser,
+  getPatientUserReviews,
+  deleteAdminReview,
   getDoctorsList,
   createDoctorController,
   updateDoctorController,

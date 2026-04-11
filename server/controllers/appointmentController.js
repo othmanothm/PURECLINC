@@ -1,12 +1,20 @@
-const { getAllDoctors } = require('../models/doctorModel');
+const { getAllDoctors, getDoctorByUserId } = require('../models/doctorModel');
 const {
   createAppointment,
+  getAppointmentById,
   getPatientAppointments,
   getDoctorAppointments,
   getAppointmentsByDateAndDoctor,
   updateAppointmentStatus,
 } = require('../models/appointmentModel');
 const { getPatientByUserId } = require('../models/patientModel');
+const {
+  APPOINTMENT_STATUS,
+  isValidAppointmentStatus,
+  canTransitionTo,
+  statusBlocksCalendarSlot,
+} = require('../constants/appointmentStatus');
+const { assertDoctorMaySetAppointmentCompleted } = require('../lib/appointmentCompletionGate');
 
 // Available time slots (9 AM to 5 PM, hourly)
 const TIME_SLOTS = [
@@ -44,7 +52,7 @@ async function getAvailableSlots(req, res, next) {
     );
     const bookedTimes = new Set(
       bookedAppointments
-        .filter((apt) => apt.status !== 'cancelled')
+        .filter((apt) => statusBlocksCalendarSlot(apt.status))
         .map((apt) => apt.appointment_time)
     );
 
@@ -71,7 +79,7 @@ async function bookAppointment(req, res, next) {
     const booked = await getAppointmentsByDateAndDoctor(doctorId, appointmentDate);
     const isBooked = booked.some(
       (apt) =>
-        apt.appointment_time === appointmentTime && apt.status !== 'cancelled'
+        apt.appointment_time === appointmentTime && statusBlocksCalendarSlot(apt.status)
     );
 
     if (isBooked) {
@@ -83,7 +91,7 @@ async function bookAppointment(req, res, next) {
       doctorId,
       appointmentDate,
       appointmentTime,
-      status: 'pending',
+      status: APPOINTMENT_STATUS.PENDING,
     });
 
     return res.status(201).json({ appointment });
@@ -110,7 +118,6 @@ async function getMyAppointments(req, res, next) {
 
 async function getDoctorAppointmentsList(req, res, next) {
   try {
-    const { getDoctorByUserId } = require('../models/doctorModel');
     const doctor = await getDoctorByUserId(req.user.id);
 
     if (!doctor) {
@@ -126,15 +133,55 @@ async function getDoctorAppointmentsList(req, res, next) {
 
 async function updateAppointmentStatusController(req, res, next) {
   try {
-    const { id } = req.params;
+    const appointmentId = parseInt(req.params.id, 10);
     const { status } = req.body;
 
-    const validStatuses = ['pending', 'confirmed', 'completed', 'cancelled'];
-    if (!validStatuses.includes(status)) {
+    if (!Number.isFinite(appointmentId) || appointmentId < 1) {
+      return res.status(400).json({ message: 'Invalid appointment id' });
+    }
+
+    if (!isValidAppointmentStatus(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
-    const appointment = await updateAppointmentStatus(id, status);
+    const doctor = await getDoctorByUserId(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+
+    const existing = await getAppointmentById(appointmentId);
+    if (!existing) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+    if (existing.doctor_id !== doctor.id) {
+      return res.status(403).json({ message: 'Not allowed to update this appointment' });
+    }
+
+    const current = existing.status;
+
+    if (!isValidAppointmentStatus(current)) {
+      return res.status(409).json({
+        message:
+          'Appointment has an unrecognized status; run DB normalization migrations or contact support.',
+      });
+    }
+
+    if (current === status) {
+      return res.json({ appointment: existing });
+    }
+
+    if (!canTransitionTo(current, status)) {
+      return res.status(400).json({ message: 'Invalid status transition' });
+    }
+
+    if (status === APPOINTMENT_STATUS.COMPLETED) {
+      const completion = await assertDoctorMaySetAppointmentCompleted(appointmentId);
+      if (!completion.ok) {
+        return res.status(completion.status).json({ message: completion.message });
+      }
+    }
+
+    const appointment = await updateAppointmentStatus(appointmentId, status);
     return res.json({ appointment });
   } catch (err) {
     return next(err);

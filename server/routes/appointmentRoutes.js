@@ -11,6 +11,7 @@ const {
   getDoctorAppointmentsList,
   updateAppointmentStatusController,
 } = require('../controllers/appointmentController');
+const { ALL_STATUSES } = require('../constants/appointmentStatus');
 
 const router = express.Router();
 
@@ -48,7 +49,7 @@ router.put(
   '/:id/status',
   roleMiddleware('doctor'),
   [
-    body('status').isIn(['pending', 'confirmed', 'completed', 'cancelled']).withMessage('Invalid status'),
+    body('status').isIn([...ALL_STATUSES]).withMessage('Invalid status'),
   ],
   validate,
   updateAppointmentStatusController

@@ -49,6 +49,7 @@ async function login(req, res, next) {
       name: user.name,
       email: user.email,
       role: user.role,
+      ...(user.role === 'admin' ? { admin_role: user.admin_role ?? null } : {}),
     };
     const token = signToken(safeUser);
 
@@ -79,6 +80,7 @@ async function adminLogin(req, res, next) {
       name: user.name,
       email: user.email,
       role: user.role,
+      admin_role: user.admin_role ?? null,
     };
     const token = signToken(safeUser);
 
@@ -102,6 +104,7 @@ async function me(req, res, next) {
       name: user.name,
       email: user.email,
       role: user.role,
+      ...(user.role === 'admin' ? { admin_role: user.admin_role ?? null } : {}),
     };
     return res.json({ user: safeUser });
   } catch (err) {

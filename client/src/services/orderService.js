@@ -2,25 +2,16 @@ import api from './api';
 
 export const orderService = {
   async createCheckoutSession(items, checkoutData = {}) {
-    const response = await api.post('/orders/create-checkout-session', { 
+    const response = await api.post('/orders/create-checkout-session', {
       items,
-      ...checkoutData
+      ...checkoutData,
     });
     return response.data;
   },
 
-  async createOrder(items, totalPrice) {
-    // Prepare items with prices
-    const itemsWithPrices = items.map((item) => ({
-      productId: item.productId,
-      quantity: item.quantity,
-      price: item.price,
-    }));
-
-    const response = await api.post('/orders', {
-      items: itemsWithPrices,
-      totalPrice,
-    });
+  /** Server-only pricing preview (read-only). */
+  async previewCheckout(items) {
+    const response = await api.post('/orders/checkout-preview', { items });
     return response.data;
   },
 
@@ -28,5 +19,10 @@ export const orderService = {
     const response = await api.get('/orders/my');
     return response.data;
   },
-};
 
+  /** Poll after Stripe redirect until webhook confirms payment. */
+  async getOrderByCheckoutSession(sessionId) {
+    const response = await api.get(`/orders/by-session/${encodeURIComponent(sessionId)}`);
+    return response.data;
+  },
+};
