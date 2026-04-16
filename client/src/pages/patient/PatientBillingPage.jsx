@@ -98,7 +98,7 @@ function PatientBillingPage() {
   const s = { ...defaultSummary, ...summary };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-cyan-50/50 to-sky-100/70 px-4 py-8 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-stone-50/80 to-sky-100/70 px-4 py-8 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>

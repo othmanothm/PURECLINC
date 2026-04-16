@@ -9,6 +9,7 @@ function AppointmentsPage() {
   const { t } = useTranslation();
   const [doctors, setDoctors] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [treatmentCategory, setTreatmentCategory] = useState('');
   const [selectedDoctor, setSelectedDoctor] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
   const [availableSlots, setAvailableSlots] = useState([]);
@@ -36,6 +37,14 @@ function AppointmentsPage() {
     });
   }, []);
 
+  const loadAppointments = useCallback(async () => {
+    try {
+      const appointmentsData = await appointmentService.getMyAppointments();
+      setAppointments(appointmentsData.appointments || []);
+    } catch (err) {
+      console.error('Failed to load appointments:', err);
+    }
+  }, []);
 
   useEffect(() => {
     // Only load once on mount
@@ -77,15 +86,14 @@ function AppointmentsPage() {
         const doctorsData = await appointmentService.getDoctors();
         setDoctors(doctorsData.doctors || []);
         
-        // Load appointments
-        const appointmentsData = await appointmentService.getMyAppointments();
-        setAppointments(appointmentsData.appointments || []);
+        await loadAppointments();
       } catch (err) {
         console.error('Failed to load data:', err);
       }
     };
 
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; loadAppointments is stable
   }, []);
 
   const loadSlots = useCallback(async () => {
@@ -115,7 +123,7 @@ function AppointmentsPage() {
 
   const handleBook = async (e) => {
     e.preventDefault();
-    if (!selectedDoctor || !selectedDate || !selectedTime) {
+    if (!treatmentCategory || !selectedDoctor || !selectedDate || !selectedTime) {
       setError(t('appointments.selectDoctorDateTime'));
       return;
     }
@@ -128,12 +136,14 @@ function AppointmentsPage() {
         doctorId: parseInt(selectedDoctor),
         appointmentDate: selectedDate,
         appointmentTime: selectedTime,
+        treatmentCategory,
       });
+      setTreatmentCategory('');
       setSelectedDoctor('');
       setSelectedDate('');
       setSelectedTime('');
       setAvailableSlots([]);
-      loadAppointments();
+      await loadAppointments();
       toast.success(t('appointments.bookedSuccessfully'));
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || t('appointments.failedToBook');
@@ -175,6 +185,23 @@ function AppointmentsPage() {
           )}
 
           <form onSubmit={handleBook} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {t('appointments.selectTreatmentCategory')}
+              </label>
+              <select
+                value={treatmentCategory}
+                onChange={(e) => setTreatmentCategory(e.target.value)}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+                required
+              >
+                <option value="">{t('appointments.selectTreatmentCategory')}</option>
+                <option value="hair">{t('appointments.treatment_hair')}</option>
+                <option value="skin">{t('appointments.treatment_skin')}</option>
+                <option value="body">{t('appointments.treatment_body')}</option>
+              </select>
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">{t('appointments.selectDoctor')}</label>
               <select
@@ -261,6 +288,11 @@ function AppointmentsPage() {
                         {apt.specialization && (
                           <span className="rounded-full bg-sky-100 dark:bg-sky-900/30 px-2 py-0.5 text-xs font-medium text-sky-700 dark:text-sky-300">
                             {apt.specialization}
+                          </span>
+                        )}
+                        {apt.treatment_category && (
+                          <span className="rounded-full bg-[#E5E2D8] dark:bg-slate-600 px-2 py-0.5 text-xs font-semibold text-[#1A1A1A] dark:text-slate-100">
+                            {t(`appointments.treatment_${apt.treatment_category}`)}
                           </span>
                         )}
                       </div>

@@ -28,7 +28,7 @@ async function createUser() {
 
     // Create user
     const [result] = await db.query(
-      'INSERT INTO Users (name, email, password, role) VALUES (?, ?, ?, ?)',
+      'INSERT INTO Users (name, email, password, role, email_verified) VALUES (?, ?, ?, ?, 1)',
       [name, email, passwordHash, role]
     );
 

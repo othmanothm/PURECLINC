@@ -2,31 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS Variables for Light Mode — sky / cyan tint */
+@layer base {
+  html:not(.dark) {
+    color: var(--text-primary);
+  }
+}
+
+/* CSS Variables for Light Mode — PURE landing (cream + sage, matches reference) */
 :root {
   color-scheme: light;
 
   /* Background Colors */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f0f9ff;
-  --bg-tertiary: #e0f2fe;
-  --bg-hover: #dbeafe;
+  --bg-primary: #f2f0e8;
+  --bg-secondary: transparent;
+  --bg-tertiary: #ebe8e0;
+  --bg-hover: #e5e2d8;
 
   /* Text Colors */
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-tertiary: #475569;
-  --text-muted: #64748b;
+  --text-primary: #1a1a1a;
+  --text-secondary: #667085;
+  --text-tertiary: #667085;
+  --text-muted: #858c9a;
 
   /* Border Colors */
-  --border-primary: #bae6fd;
-  --border-secondary: #7dd3fc;
-  --border-hover: #38bdf8;
+  --border-primary: #e5e2d8;
+  --border-secondary: #d8d4ca;
+  --border-hover: #8f8a7a;
 
-  /* Accent Colors */
-  --accent-primary: #0ea5e9;
-  --accent-secondary: #0284c7;
-  --accent-hover: #0369a1;
+  /* Accent Colors (sage / olive) */
+  --accent-primary: #6b705c;
+  --accent-secondary: #565a49;
+  --accent-hover: #494c40;
 
   /* Status Colors */
   --success: #10b981;
@@ -35,19 +41,36 @@
   --error-bg: #fee2e2;
   --warning: #f59e0b;
   --warning-bg: #fef3c7;
-  --info: #0ea5e9;
-  --info-bg: #e0f2fe;
+  --info: #6b705c;
+  --info-bg: #ebe8e0;
 
-  /* Shadow (subtle cool tint) */
-  --shadow-sm: 0 1px 2px 0 rgba(14, 165, 233, 0.06);
-  --shadow-md: 0 4px 6px -1px rgba(14, 165, 233, 0.1), 0 2px 4px -1px rgba(14, 165, 233, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(14, 165, 233, 0.12), 0 4px 6px -2px rgba(14, 165, 233, 0.06);
-  --shadow-xl: 0 20px 25px -5px rgba(14, 165, 233, 0.14), 0 10px 10px -5px rgba(14, 165, 233, 0.06);
+  /* Shadow (warm neutral tint) */
+  --shadow-sm: 0 1px 2px 0 rgba(74, 72, 62, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(74, 72, 62, 0.08), 0 2px 4px -1px rgba(74, 72, 62, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(74, 72, 62, 0.1), 0 4px 6px -2px rgba(74, 72, 62, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(74, 72, 62, 0.12), 0 10px 10px -5px rgba(74, 72, 62, 0.05);
 
   /* Gradient Colors */
-  --gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  --gradient-primary: linear-gradient(135deg, #6b705c 0%, #5c5849 100%);
   --gradient-secondary: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
-  --gradient-accent: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  --gradient-accent: linear-gradient(135deg, #8b7355 0%, #6b705c 100%);
+}
+
+/* Light mode: soft cream field (fixed) */
+html:not(.dark) {
+  min-height: 100%;
+  background-color: #f2f0e8;
+  background-image:
+    radial-gradient(ellipse 140% 80% at 50% -30%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 50%),
+    radial-gradient(ellipse 70% 50% at 100% 50%, rgba(235, 232, 224, 0.65) 0%, rgba(242, 240, 232, 0) 45%),
+    radial-gradient(ellipse 70% 50% at 0% 60%, rgba(229, 226, 216, 0.45) 0%, rgba(242, 240, 232, 0) 45%),
+    linear-gradient(180deg, #f5f3ec 0%, #f2f0e8 38%, #eeebe4 100%);
+  background-attachment: fixed;
+}
+
+html:not(.dark) body,
+html:not(.dark) #root {
+  background-color: transparent;
 }
 
 /* CSS Variables for Dark Mode */
@@ -106,20 +129,30 @@ html.dark {
 
 html {
   scroll-behavior: smooth;
-  background-color: var(--bg-secondary);
   color: var(--text-primary);
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html.dark {
+  background-color: var(--bg-secondary);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background-color: var(--bg-secondary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html:not(.dark) body {
+  font-family: Tajawal, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html.dark body {
+  background-color: var(--bg-secondary);
 }
 
 /* Ensure all elements transition smoothly when theme changes */
@@ -152,11 +185,14 @@ aside {
 
 /* Ensure root element changes immediately */
 #root {
-  background-color: var(--bg-secondary);
   color: var(--text-primary);
   transition: background-color 0.3s ease, color 0.3s ease;
   min-height: 100vh;
   width: 100%;
+}
+
+html.dark #root {
+  background-color: var(--bg-secondary);
 }
 
 /* Force all divs to inherit background and text colors */
@@ -176,5 +212,10 @@ div {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /** Glass card for light mode — use with dark: variants in JSX */
+  .surface-glass-light {
+    @apply border border-[#E5E2D8] bg-white/80 shadow-md shadow-stone-400/10 backdrop-blur-md dark:border-slate-600 dark:bg-slate-800 dark:shadow-none;
   }
 }

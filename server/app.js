@@ -3,7 +3,7 @@ const morgan = require('morgan');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-require('dotenv').config({ path: 'app.env' });
+require('dotenv').config({ path: path.join(__dirname, 'app.env') });
 
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 

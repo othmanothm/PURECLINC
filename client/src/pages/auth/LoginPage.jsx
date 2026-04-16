@@ -11,6 +11,7 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [needsEmailVerify, setNeedsEmailVerify] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
@@ -18,6 +19,7 @@ function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setNeedsEmailVerify(false);
     setLoading(true);
 
     try {
@@ -37,16 +39,18 @@ function LoginPage() {
         navigate('/', { replace: true });
       }
     } catch (err) {
-      const errorMessage = err.response?.data?.message || err.message || t('auth.loginFailed');
+      const data = err.response?.data;
+      const errorMessage = data?.message || err.message || t('auth.loginFailed');
       setError(errorMessage);
+      setNeedsEmailVerify(data?.code === 'EMAIL_NOT_VERIFIED');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4 py-8">
-      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-800 p-8 shadow-2xl">
+    <div className="flex min-h-screen items-center justify-center bg-transparent px-4 py-8 dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      <div className="surface-glass-light w-full max-w-md rounded-2xl p-8 shadow-2xl shadow-sky-300/20 dark:shadow-none">
         <div className="mb-6">
           <Link
             to="/"
@@ -88,8 +92,16 @@ function LoginPage() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-md bg-red-50 dark:bg-red-900/30 px-3 py-2 text-sm text-red-700 dark:text-red-400">
-            {error}
+          <div className="mb-4 space-y-2 rounded-md bg-red-50 dark:bg-red-900/30 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+            <div>{error}</div>
+            {needsEmailVerify && email.trim() && (
+              <Link
+                to={`/verify-email?email=${encodeURIComponent(email.trim())}`}
+                className="inline-block font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-200"
+              >
+                {t('auth.enterVerificationCode')}
+              </Link>
+            )}
           </div>
         )}
 

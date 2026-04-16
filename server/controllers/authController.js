@@ -1,12 +1,25 @@
 const bcrypt = require('bcryptjs');
-const { findUserByEmail, findUserById, createUser, updatePassword } = require('../models/userModel');
+const {
+  findUserByEmail,
+  findUserById,
+  createUser,
+  updatePassword,
+  setEmailVerificationChallenge,
+  isVerificationChallengeActive,
+  markEmailVerified,
+} = require('../models/userModel');
 const { createPatientProfile } = require('../models/patientModel');
-const { createDoctor } = require('../models/doctorModel');
 const { signToken } = require('../utils/jwt');
+const { sendPatientVerificationEmail } = require('../utils/mailer');
+const {
+  generateSixDigitCode,
+  hashVerificationCode,
+  verifyStoredCode,
+} = require('../utils/verificationCode');
 
 async function register(req, res, next) {
   try {
-    const { name, email, password } = req.body;
+    const { name, email } = req.body;
 
     const existing = await findUserByEmail(email);
     if (existing) {
@@ -14,18 +27,116 @@ async function register(req, res, next) {
     }
 
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    const passwordHash = await bcrypt.hash(req.body.password, salt);
 
-    // Always create as patient
-    const user = await createUser({ name, email, passwordHash, role: 'patient' });
+    const user = await createUser({
+      name,
+      email,
+      passwordHash,
+      role: 'patient',
+      emailVerified: false,
+    });
     await createPatientProfile({ userId: user.id });
 
-    const token = signToken(user);
+    const code = generateSixDigitCode();
+    const codeHash = hashVerificationCode(code);
+    await setEmailVerificationChallenge(user.id, codeHash);
+
+    try {
+      await sendPatientVerificationEmail(email, name, code);
+    } catch (mailErr) {
+      console.error('Verification email failed:', mailErr);
+      return res.status(503).json({
+        message:
+          'Account was created but the verification email could not be sent. Try "Resend code" in a moment or contact support.',
+        requiresVerification: true,
+        email,
+      });
+    }
 
     return res.status(201).json({
-      token,
-      user,
+      requiresVerification: true,
+      email,
+      message: 'We sent a verification code to your email. Enter it to activate your account.',
     });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function verifyEmail(req, res, next) {
+  try {
+    const { email, code } = req.body;
+    const user = await findUserByEmail(email);
+    if (!user || user.role !== 'patient') {
+      return res.status(400).json({ message: 'Invalid verification request' });
+    }
+    if (user.email_verified) {
+      return res.status(400).json({ message: 'This email is already verified. You can sign in.' });
+    }
+    const challengeActive = await isVerificationChallengeActive(user.id);
+    if (!challengeActive) {
+      return res.status(400).json({
+        message: 'This code has expired. Use "Resend code" to get a new one.',
+        code: 'VERIFICATION_EXPIRED',
+      });
+    }
+    if (!verifyStoredCode(code, user.email_verification_code_hash)) {
+      return res.status(400).json({ message: 'Invalid verification code' });
+    }
+
+    await markEmailVerified(user.id);
+
+    const safeUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    };
+    const token = signToken(safeUser);
+
+    return res.json({
+      token,
+      user: safeUser,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function resendVerificationEmail(req, res, next) {
+  try {
+    const { email } = req.body;
+    const user = await findUserByEmail(email);
+    if (!user || user.role !== 'patient' || user.email_verified) {
+      return res.json({
+        message: 'If an account needs verification, a new code will be sent shortly.',
+      });
+    }
+
+    const cooldownSec = Number(process.env.EMAIL_VERIFICATION_RESEND_SECONDS || 60);
+    if (user.email_verification_sent_at) {
+      const sent = new Date(user.email_verification_sent_at).getTime();
+      if (Date.now() - sent < cooldownSec * 1000) {
+        const waitSec = Math.ceil((cooldownSec * 1000 - (Date.now() - sent)) / 1000);
+        return res.status(429).json({
+          message: `Please wait ${waitSec} seconds before requesting another code.`,
+        });
+      }
+    }
+
+    const code = generateSixDigitCode();
+    const codeHash = hashVerificationCode(code);
+    await setEmailVerificationChallenge(user.id, codeHash);
+
+    try {
+      await sendPatientVerificationEmail(email, user.name, code);
+    } catch (mailErr) {
+      console.error('Resend verification email failed:', mailErr);
+      return res.status(503).json({ message: 'Could not send email. Try again later.' });
+    }
+
+    return res.json({ message: 'A new verification code was sent to your email.' });
   } catch (err) {
     return next(err);
   }
@@ -42,6 +153,14 @@ async function login(req, res, next) {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    if (user.role === 'patient' && !user.email_verified) {
+      return res.status(403).json({
+        code: 'EMAIL_NOT_VERIFIED',
+        message:
+          'Please verify your email before signing in. Check your inbox for the code, or request a new one from the verification page.',
+      });
     }
 
     const safeUser = {
@@ -151,6 +270,8 @@ async function changePassword(req, res, next) {
 
 module.exports = {
   register,
+  verifyEmail,
+  resendVerificationEmail,
   login,
   adminLogin,
   me,

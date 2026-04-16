@@ -15,6 +15,7 @@ export const adminService = {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit);
     if (params.offset) queryParams.append('offset', params.offset);
+    if (params.search) queryParams.append('search', params.search);
     const response = await api.get(`/admin/users?${queryParams.toString()}`);
     return response.data;
   },

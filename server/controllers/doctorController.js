@@ -6,8 +6,11 @@ const {
 } = require('../models/appointmentModel');
 const { APPOINTMENT_STATUS } = require('../constants/appointmentStatus');
 const { getPatientById, getPatientByUserId } = require('../models/patientModel');
-const { getMedicalRecordByPatientId } = require('../models/medicalRecordModel');
-const { updateMedicalRecord } = require('../models/medicalRecordModel');
+const {
+  getMedicalRecordByPatientId,
+  mergeAndUpdateMedicalRecord,
+} = require('../models/medicalRecordModel');
+const { patchPatientGeneralHealth } = require('../models/patientModel');
 
 async function getMyProfile(req, res, next) {
   try {
@@ -65,18 +68,30 @@ async function getPatients(req, res, next) {
 async function getPatientRecord(req, res, next) {
   try {
     const { patientId } = req.params;
-    const patient = await getPatientById(parseInt(patientId));
+    const patient = await getPatientById(parseInt(patientId, 10));
 
     if (!patient) {
       return res.status(404).json({ message: 'Patient not found' });
     }
 
+    const doctor = await getDoctorByUserId(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const [access] = await db.query(
+      `SELECT 1 FROM Appointments WHERE patient_id = ? AND doctor_id = ? LIMIT 1`,
+      [patient.id, doctor.id]
+    );
+    if (access.length === 0) {
+      return res.status(403).json({ message: 'Not allowed to view this patient' });
+    }
+
     const medicalRecord = await getMedicalRecordByPatientId(patient.id);
 
     // Get patient appointments with this doctor
-    const doctor = await getDoctorByUserId(req.user.id);
-    const { getDb } = require('../config/db');
-    const db = getDb();
     const [appointments] = await db.query(
       `SELECT a.*, d.specialization, u.name as doctor_name
        FROM Appointments a
@@ -131,25 +146,95 @@ async function updatePatientNotes(req, res, next) {
     const { patientId } = req.params;
     const { notes } = req.body;
 
-    const patient = await getPatientById(parseInt(patientId));
+    const doctor = await getDoctorByUserId(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+
+    const patient = await getPatientById(parseInt(patientId, 10));
     if (!patient) {
       return res.status(404).json({ message: 'Patient not found' });
     }
 
-    let medicalRecord = await getMedicalRecordByPatientId(patient.id);
-    if (!medicalRecord) {
-      const { createMedicalRecord } = require('../models/medicalRecordModel');
-      medicalRecord = await createMedicalRecord({
-        patientId: patient.id,
-        notes: notes || null,
-      });
-    } else {
-      medicalRecord = await updateMedicalRecord(patient.id, {
-        notes: notes || null,
-      });
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const [access] = await db.query(
+      `SELECT 1 FROM Appointments WHERE patient_id = ? AND doctor_id = ? LIMIT 1`,
+      [patient.id, doctor.id]
+    );
+    if (access.length === 0) {
+      return res.status(403).json({ message: 'Not allowed to update this patient' });
     }
 
+    const medicalRecord = await mergeAndUpdateMedicalRecord(patient.id, {
+      notes: notes ?? null,
+    });
+
     return res.json({ medicalRecord });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function updatePatientMedicalRecord(req, res, next) {
+  try {
+    const doctor = await getDoctorByUserId(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+
+    const patient = await getPatientById(parseInt(req.params.patientId, 10));
+    if (!patient) {
+      return res.status(404).json({ message: 'Patient not found' });
+    }
+
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const [access] = await db.query(
+      `SELECT 1 FROM Appointments WHERE patient_id = ? AND doctor_id = ? LIMIT 1`,
+      [patient.id, doctor.id]
+    );
+    if (access.length === 0) {
+      return res.status(403).json({ message: 'Not allowed to update this patient' });
+    }
+
+    const {
+      skinType,
+      complaints,
+      dermatologicalHistory,
+      allergies,
+      currentMedications,
+      pregnancyStatus,
+      notes,
+      generalHealth,
+    } = req.body;
+
+    const medicalRecord = await mergeAndUpdateMedicalRecord(patient.id, {
+      skinType,
+      complaints,
+      dermatologicalHistory,
+      allergies,
+      currentMedications,
+      pregnancyStatus,
+      notes,
+    });
+
+    await patchPatientGeneralHealth(patient.id, generalHealth);
+
+    const patientFresh = await getPatientById(patient.id);
+
+    return res.json({
+      medicalRecord,
+      patient: {
+        id: patientFresh.id,
+        name: patientFresh.name,
+        email: patientFresh.email,
+        phone: patientFresh.phone,
+        date_of_birth: patientFresh.date_of_birth,
+        address: patientFresh.address,
+        general_health: patientFresh.general_health,
+      },
+    });
   } catch (err) {
     return next(err);
   }
@@ -228,6 +313,7 @@ module.exports = {
   getPatients,
   getPatientRecord,
   updatePatientNotes,
+  updatePatientMedicalRecord,
   createOrUpdateTreatment,
 };
 

@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { adminService } from '../../services/adminService';
 import { reviewService } from '../../services/reviewService';
 
+const accentBtn =
+  'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#6B705C] text-white shadow-sm transition-colors hover:bg-[#565a49] disabled:opacity-50 dark:bg-[#6b725c] dark:hover:bg-[#5a604f]';
+
 function UsersPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const rtl = i18n.language === 'ar';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -15,10 +19,35 @@ function UsersPage() {
   const [reviewsModalList, setReviewsModalList] = useState([]);
   const [reviewsStatusFilter, setReviewsStatusFilter] = useState('all');
   const [reviewActionBusyId, setReviewActionBusyId] = useState(null);
+  const [nameSearchInput, setNameSearchInput] = useState('');
+  const [nameSearchApplied, setNameSearchApplied] = useState('');
+  const nameSearchDebounceIsFirst = useRef(true);
+
+  useEffect(() => {
+    const waitMs = nameSearchDebounceIsFirst.current ? 0 : 300;
+    nameSearchDebounceIsFirst.current = false;
+    const id = setTimeout(() => setNameSearchApplied(nameSearchInput.trim()), waitMs);
+    return () => clearTimeout(id);
+  }, [nameSearchInput]);
+
+  const loadUsers = useCallback(async (searchOverride) => {
+    const search = searchOverride !== undefined ? searchOverride : nameSearchApplied;
+    setLoading(true);
+    try {
+      const data = await adminService.getUsers({
+        search: search || undefined,
+      });
+      setUsers(data.users || []);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [nameSearchApplied]);
 
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [loadUsers]);
 
   useEffect(() => {
     if (!reviewsModalUser) return undefined;
@@ -43,18 +72,6 @@ function UsersPage() {
       cancelled = true;
     };
   }, [reviewsModalUser, reviewsStatusFilter, t]);
-
-  const loadUsers = async () => {
-    setLoading(true);
-    try {
-      const data = await adminService.getUsers();
-      setUsers(data.users || []);
-    } catch (err) {
-      console.error('Failed to load users:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleEdit = (user) => {
     setEditingId(user.id);
@@ -216,123 +233,158 @@ function UsersPage() {
     return <div className="flex flex-wrap gap-1.5">{actions}</div>;
   };
 
+  const initial = (name) => (name && name.trim() ? name.trim()[0].toUpperCase() : '?');
+
   return (
-    <div className="px-4 py-8 dark:bg-slate-900">
-      <div className="mx-auto max-w-6xl">
+    <div
+      dir={rtl ? 'rtl' : 'ltr'}
+      className="bg-transparent px-4 py-8 dark:bg-slate-900"
+    >
+      <div className="mx-auto max-w-6xl font-tajawal">
         <div className="mb-8">
-          <h1 className="mb-2 text-4xl font-bold text-slate-900 dark:text-slate-100">{t('admin.usersManagement')}</h1>
-          <p className="text-slate-600 dark:text-slate-300">{t('admin.manageAllUsers')}</p>
+          <h1 className="mb-2 text-3xl font-bold text-[#1A1A1A] dark:text-slate-100 md:text-4xl">{t('admin.usersManagement')}</h1>
+          <p className="text-[#667085] dark:text-slate-300">{t('admin.manageAllUsers')}</p>
+          <div className="relative mt-6 max-w-lg">
+            <label htmlFor="admin-users-name-search" className="sr-only">
+              {t('admin.searchUsersByName')}
+            </label>
+            <span className={`pointer-events-none absolute inset-y-0 flex items-center ${rtl ? 'right-3.5' : 'left-3.5'}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="h-5 w-5 text-[#6B705C]">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </span>
+            <input
+              id="admin-users-name-search"
+              type="search"
+              value={nameSearchInput}
+              onChange={(e) => setNameSearchInput(e.target.value)}
+              placeholder={t('admin.searchUsersByName')}
+              autoComplete="off"
+              className={`w-full rounded-2xl border border-[#E5E2D8] bg-white py-3.5 text-[#1A1A1A] shadow-sm placeholder:text-[#667085]/80 focus:border-[#6B705C] focus:outline-none focus:ring-2 focus:ring-[#6B705C]/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${rtl ? 'pr-11 pl-4' : 'pl-11 pr-4'}`}
+            />
+          </div>
         </div>
 
         {loading ? (
-          <p className="text-center text-slate-500 dark:text-slate-400">{t('common.loading')}</p>
+          <p className="text-center text-[#667085] dark:text-slate-400">{t('common.loading')}</p>
+        ) : users.length === 0 ? (
+          <p className="rounded-2xl border border-[#E5E2D8] bg-white py-16 text-center text-[#667085] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
+            {t('admin.noUsersFound')}
+          </p>
         ) : (
-          <div className="overflow-x-auto rounded-2xl bg-white dark:bg-slate-800 shadow-lg">
-            <table className="w-full">
-              <thead className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-bold text-slate-700 dark:text-slate-300">ID</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold text-slate-700 dark:text-slate-300">{t('common.name')}</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold text-slate-700 dark:text-slate-300">{t('common.email')}</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold text-slate-700 dark:text-slate-300">{t('common.role')}</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold text-slate-700 dark:text-slate-300">{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.id} className="border-t border-slate-200 dark:border-slate-700 transition-colors hover:bg-sky-50 dark:hover:bg-slate-700">
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{user.id}</td>
-                    <td className="px-6 py-4 text-sm">
-                      {editingId === user.id ? (
-                        <input
-                          type="text"
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                        />
-                      ) : (
-                        <span className="font-medium text-slate-900 dark:text-slate-100">{user.name}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {editingId === user.id ? (
-                        <input
-                          type="email"
-                          value={editForm.email}
-                          onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                          className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                        />
-                      ) : (
-                        <span className="text-slate-600 dark:text-slate-300">{user.email}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {editingId === user.id ? (
-                        <select
-                          value={editForm.role}
-                          onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                          className="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {users.map((user) => (
+              <article
+                key={user.id}
+                className="flex flex-col overflow-hidden rounded-[32px] border border-stone-200/90 bg-[#F7F6F2] shadow-lg shadow-stone-300/25 dark:border-slate-600 dark:bg-slate-800 dark:shadow-none"
+              >
+                {editingId === user.id ? (
+                  <div className="flex flex-1 flex-col gap-3 p-5">
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      className="w-full rounded-xl border border-[#E5E2D8] bg-white px-3 py-2 text-sm text-[#1A1A1A] focus:border-[#6B705C] focus:outline-none focus:ring-1 focus:ring-[#6B705C] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                    />
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      className="w-full rounded-xl border border-[#E5E2D8] bg-white px-3 py-2 text-sm text-[#1A1A1A] focus:border-[#6B705C] focus:outline-none focus:ring-1 focus:ring-[#6B705C] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                    />
+                    <select
+                      value={editForm.role}
+                      onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                      className="w-full rounded-xl border border-[#E5E2D8] bg-white px-3 py-2 text-sm focus:border-[#6B705C] focus:outline-none focus:ring-1 focus:ring-[#6B705C] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                    >
+                      <option value="patient">{t('common.patients')}</option>
+                      <option value="doctor">{t('common.doctors')}</option>
+                      <option value="admin">{t('common.admin')}</option>
+                    </select>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSave}
+                        className="flex-1 rounded-xl bg-[#6B705C] py-2.5 text-sm font-bold text-white hover:bg-[#565a49]"
+                      >
+                        {t('common.save')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className="flex-1 rounded-xl border border-[#E5E2D8] bg-white py-2.5 text-sm font-semibold text-[#1A1A1A] hover:bg-stone-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className={`flex items-center justify-between border-b border-stone-200/90 px-4 py-3 dark:border-slate-600 ${rtl ? 'flex-row-reverse' : ''}`}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6B705C]/25 to-[#6B705C]/40 text-xs font-bold text-[#2f362e] dark:from-slate-600 dark:to-slate-700 dark:text-slate-200">
+                        {initial(user.name)}
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#1A1A1A] shadow-sm dark:bg-slate-700 dark:text-slate-100">
+                        ID · {user.id}
+                      </span>
+                    </div>
+                    <div className={`flex flex-1 flex-col px-5 pb-5 pt-4 ${rtl ? 'text-right' : 'text-left'}`}>
+                      <h2 className="text-lg font-bold text-[#1A1A1A] dark:text-slate-100">{user.name}</h2>
+                      <p className="mt-1 truncate text-sm text-[#667085] dark:text-slate-400" title={user.email}>
+                        {user.email}
+                      </p>
+                      <span
+                        className={`mt-3 inline-flex w-fit rounded-full px-3 py-0.5 text-xs font-semibold ${
+                          user.role === 'admin'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200'
+                            : user.role === 'doctor'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                              : 'bg-white/90 text-[#4a563e] shadow-sm dark:bg-slate-700 dark:text-sky-300'
+                        }`}
+                      >
+                        {user.role}
+                      </span>
+                    </div>
+                    <div className={`flex items-center gap-2 border-t border-stone-200/90 px-5 py-4 dark:border-slate-600 ${rtl ? 'flex-row-reverse justify-end' : 'justify-end'}`}>
+                      {user.role === 'patient' && (
+                        <button
+                          type="button"
+                          title={t('admin.viewReviews')}
+                          onClick={() => openReviewsModal(user)}
+                          className={accentBtn}
                         >
-                          <option value="patient">{t('common.patients')}</option>
-                          <option value="doctor">{t('common.doctors')}</option>
-                          <option value="admin">{t('common.admin')}</option>
-                        </select>
-                      ) : (
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
-                          user.role === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
-                          user.role === 'doctor' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' :
-                          'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300'
-                        }`}>
-                          {user.role}
-                        </span>
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                          </svg>
+                        </button>
                       )}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {editingId === user.id ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSave}
-                            className="rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md transition-all hover:scale-105"
-                          >
-                            {t('common.save')}
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-50 dark:hover:bg-slate-600"
-                          >
-                            {t('common.cancel')}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {user.role === 'patient' && (
-                            <button
-                              type="button"
-                              onClick={() => openReviewsModal(user)}
-                              className="rounded-lg border border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-700 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-all hover:bg-slate-50 dark:hover:bg-slate-600"
-                            >
-                              {t('admin.viewReviews')}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleEdit(user)}
-                            className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-sky-700"
-                          >
-                            {t('common.edit')}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-red-700"
-                          >
-                            {t('common.delete')}
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button
+                        type="button"
+                        title={t('common.edit')}
+                        onClick={() => handleEdit(user)}
+                        className={accentBtn}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        title={t('common.delete')}
+                        onClick={() => handleDelete(user.id)}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-red-200 bg-white text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/50 dark:bg-slate-800 dark:hover:bg-red-950/40"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                        </svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </article>
+            ))}
           </div>
         )}
 

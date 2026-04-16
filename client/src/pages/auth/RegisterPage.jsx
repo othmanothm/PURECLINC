@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../auth/AuthContext';
 import { authService } from '../../services/authService';
@@ -17,6 +17,12 @@ function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [step, setStep] = useState('form');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [info, setInfo] = useState('');
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -41,23 +47,128 @@ function RegisterPage() {
     setLoading(true);
     try {
       const response = await authService.register(form.name, form.email, form.password);
-      const { token, user } = response;
-      
-      login(token, user);
-      
-      // Redirect to medical profile page
-      navigate('/patient/medical-profile', { replace: true });
+      if (response.requiresVerification && response.email) {
+        setPendingEmail(response.email);
+        setStep('verify');
+        setInfo(response.message || t('auth.verifyEmailSubtitle'));
+        return;
+      }
+      if (response.token && response.user) {
+        login(response.token, response.user);
+        navigate('/patient/medical-profile', { replace: true });
+      }
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || t('auth.registrationFailed');
       setError(errorMessage);
+      if (err.response?.data?.requiresVerification && err.response?.data?.email) {
+        setPendingEmail(err.response.data.email);
+        setStep('verify');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleVerifySubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setInfo('');
+    if (!/^\d{6}$/.test(verifyCode.trim())) {
+      setError(t('auth.verificationCodeInvalid'));
+      return;
+    }
+    setVerifyLoading(true);
+    try {
+      const { token, user } = await authService.verifyEmail(pendingEmail.trim(), verifyCode.trim());
+      login(token, user);
+      navigate('/patient/medical-profile', { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || t('auth.verificationFailed'));
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError('');
+    setInfo('');
+    setResendLoading(true);
+    try {
+      const data = await authService.resendVerification(pendingEmail.trim());
+      setInfo(data.message || t('auth.verificationCodeSent'));
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || t('auth.resendFailed'));
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  if (step === 'verify') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-transparent px-4 dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+        <div className="surface-glass-light w-full max-w-md rounded-2xl p-8 shadow-2xl shadow-sky-300/20 dark:shadow-none">
+          <div className="mb-6 text-center">
+            <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{t('auth.verifyEmailTitle')}</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{t('auth.verifyEmailSubtitle')}</p>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 break-all">{pendingEmail}</p>
+          </div>
+          {error && (
+            <div className="mb-4 rounded-md bg-red-50 dark:bg-red-900/30 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+              {error}
+            </div>
+          )}
+          {info && (
+            <div className="mb-4 rounded-md bg-emerald-50 dark:bg-emerald-900/30 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-300">
+              {info}
+            </div>
+          )}
+          <form onSubmit={handleVerifySubmit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="verify-code">
+                {t('auth.verificationCode')}
+              </label>
+              <input
+                id="verify-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-center text-lg tracking-[0.4em] font-mono shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={verifyLoading}
+              className="w-full rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl disabled:opacity-60"
+            >
+              {verifyLoading ? t('common.loading') : t('auth.confirmEmail')}
+            </button>
+          </form>
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resendLoading}
+            className="mt-4 w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-60"
+          >
+            {resendLoading ? t('common.loading') : t('auth.resendVerificationCode')}
+          </button>
+          <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
+            <Link to="/login" className="font-medium text-sky-600 dark:text-sky-400 hover:underline">
+              {t('common.login')}
+            </Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-800 p-8 shadow-2xl">
+    <div className="flex min-h-screen items-center justify-center bg-transparent px-4 dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      <div className="surface-glass-light w-full max-w-md rounded-2xl p-8 shadow-2xl shadow-sky-300/20 dark:shadow-none">
         <div className="mb-6 text-center">
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-500">
             <svg

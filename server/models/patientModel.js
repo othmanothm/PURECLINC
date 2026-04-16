@@ -53,11 +53,21 @@ async function updatePatientProfile(userId, data) {
   return getPatientByUserId(userId);
 }
 
+async function patchPatientGeneralHealth(patientId, generalHealth) {
+  if (generalHealth === undefined) return;
+  const db = getDb();
+  await db.query(`UPDATE Patients SET general_health = ? WHERE id = ?`, [
+    generalHealth === '' ? null : generalHealth,
+    patientId,
+  ]);
+}
+
 module.exports = {
   getPatientByUserId,
   getPatientById,
   createPatientProfile,
   updatePatientProfile,
+  patchPatientGeneralHealth,
 };
 
 

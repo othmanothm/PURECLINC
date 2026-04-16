@@ -15,6 +15,10 @@ const {
   statusBlocksCalendarSlot,
 } = require('../constants/appointmentStatus');
 const { assertDoctorMaySetAppointmentCompleted } = require('../lib/appointmentCompletionGate');
+const {
+  notifyAppointmentBooked,
+  notifyAppointmentConfirmed,
+} = require('../services/emailNotifications');
 
 // Available time slots (9 AM to 5 PM, hourly)
 const TIME_SLOTS = [
@@ -73,7 +77,7 @@ async function bookAppointment(req, res, next) {
       return res.status(404).json({ message: 'Patient profile not found' });
     }
 
-    const { doctorId, appointmentDate, appointmentTime } = req.body;
+    const { doctorId, appointmentDate, appointmentTime, treatmentCategory } = req.body;
 
     // Check if slot is available
     const booked = await getAppointmentsByDateAndDoctor(doctorId, appointmentDate);
@@ -91,8 +95,28 @@ async function bookAppointment(req, res, next) {
       doctorId,
       appointmentDate,
       appointmentTime,
+      treatmentCategory,
       status: APPOINTMENT_STATUS.PENDING,
     });
+
+    const fullApt = await getAppointmentById(appointment.id);
+    if (fullApt && fullApt.patient_email) {
+      try {
+        await notifyAppointmentBooked({
+          to: fullApt.patient_email,
+          patientName: fullApt.patient_name || 'Patient',
+          doctorName: fullApt.doctor_name || 'Doctor',
+          specialization: fullApt.specialization,
+          date: String(appointmentDate),
+          time: appointmentTime,
+          treatmentCategory,
+          statusNote:
+            'We received your appointment request. It is pending confirmation by the clinic.',
+        });
+      } catch (mailErr) {
+        console.error('[email] appointment booked:', mailErr.message || mailErr);
+      }
+    }
 
     return res.status(201).json({ appointment });
   } catch (err) {
@@ -182,6 +206,22 @@ async function updateAppointmentStatusController(req, res, next) {
     }
 
     const appointment = await updateAppointmentStatus(appointmentId, status);
+
+    if (status === APPOINTMENT_STATUS.CONFIRMED && appointment && appointment.patient_email) {
+      try {
+        await notifyAppointmentConfirmed({
+          to: appointment.patient_email,
+          patientName: appointment.patient_name || 'Patient',
+          doctorName: appointment.doctor_name || 'Doctor',
+          specialization: appointment.specialization,
+          date: appointment.appointment_date,
+          time: appointment.appointment_time,
+        });
+      } catch (mailErr) {
+        console.error('[email] appointment confirmed:', mailErr.message || mailErr);
+      }
+    }
+
     return res.json({ appointment });
   } catch (err) {
     return next(err);

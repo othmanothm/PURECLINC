@@ -7,13 +7,14 @@ async function createAppointment({
   doctorId,
   appointmentDate,
   appointmentTime,
+  treatmentCategory = null,
   status = APPOINTMENT_STATUS.PENDING,
 }) {
   const db = getDb();
   const [result] = await db.query(
-    `INSERT INTO Appointments (patient_id, doctor_id, appointment_date, appointment_time, status)
-     VALUES (?, ?, ?, ?, ?)`,
-    [patientId, doctorId, appointmentDate, appointmentTime, status]
+    `INSERT INTO Appointments (patient_id, doctor_id, appointment_date, appointment_time, treatment_category, status)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [patientId, doctorId, appointmentDate, appointmentTime, treatmentCategory, status]
   );
   return { id: result.insertId, patient_id: patientId, doctor_id: doctorId };
 }
@@ -24,6 +25,7 @@ async function getAppointmentById(appointmentId) {
     `SELECT a.*, 
      p.user_id as patient_user_id,
      u_p.name as patient_name,
+     u_p.email as patient_email,
      u_d.name as doctor_name,
      d.specialization
      FROM Appointments a
@@ -120,6 +122,31 @@ async function updateAppointmentStatus(appointmentId, status) {
   return getAppointmentById(appointmentId);
 }
 
+/** IDs of confirmed appointments needing a reminder (see env APPOINTMENT_REMINDER_*). */
+async function listAppointmentIdsNeedingReminder() {
+  const db = getDb();
+  const hours = Number(process.env.APPOINTMENT_REMINDER_HOURS_BEFORE || 24);
+  const windowMin = Number(process.env.APPOINTMENT_REMINDER_WINDOW_MINUTES || 30);
+  const centerMin = hours * 60;
+  const [rows] = await db.query(
+    `SELECT a.id FROM Appointments a
+     WHERE a.status = 'confirmed'
+     AND a.reminder_email_sent_at IS NULL
+     AND TIMESTAMP(a.appointment_date, a.appointment_time) > NOW()
+     AND TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(a.appointment_date, a.appointment_time)) BETWEEN ? AND ?`,
+    [centerMin - windowMin, centerMin + windowMin]
+  );
+  return rows.map((r) => r.id);
+}
+
+async function markAppointmentReminderSent(appointmentId) {
+  const db = getDb();
+  await db.query(
+    `UPDATE Appointments SET reminder_email_sent_at = NOW() WHERE id = ? AND reminder_email_sent_at IS NULL`,
+    [appointmentId]
+  );
+}
+
 module.exports = {
   createAppointment,
   getAppointmentById,
@@ -128,5 +155,7 @@ module.exports = {
   getDoctorAppointmentsWithCompletionHints,
   getAppointmentsByDateAndDoctor,
   updateAppointmentStatus,
+  listAppointmentIdsNeedingReminder,
+  markAppointmentReminderSent,
 };
 

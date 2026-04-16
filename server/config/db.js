@@ -1,15 +1,30 @@
 const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: 'app.env' });
+require('dotenv').config({ path: path.join(__dirname, '..', 'app.env') });
 
 let pool;
 
+/** @param {string} url e.g. mysql+pymysql://user:pass@host:3306/dbname */
+function configFromDatabaseUrl(url) {
+  const normalized = url.replace(/^mysql(\+[a-z0-9]+)?:\/\//i, 'mysql://');
+  const parsed = new URL(normalized);
+  const database = parsed.pathname.replace(/^\//, '').split('?')[0];
+  return {
+    host: parsed.hostname || 'localhost',
+    port: parsed.port ? Number(parsed.port) : 3306,
+    user: decodeURIComponent(parsed.username || 'root'),
+    password: decodeURIComponent(parsed.password || ''),
+    database: database || 'pureskin_clinic',
+  };
+}
+
 async function ensureDatabaseExists(config) {
-  const { host, user, password, database } = config;
+  const { host, port, user, password, database } = config;
 
   const connection = await mysql.createConnection({
     host,
+    port,
     user,
     password,
     multipleStatements: true,
@@ -70,11 +85,16 @@ async function runMigrations(poolInstance) {
 async function initDb() {
   if (pool) return pool;
 
+  const fromUrl = process.env.DATABASE_URL
+    ? configFromDatabaseUrl(process.env.DATABASE_URL)
+    : null;
+
   const config = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'pureskin_clinic',
+    host: (fromUrl?.host ?? process.env.DB_HOST) || 'localhost',
+    port: fromUrl?.port ?? (process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306),
+    user: (fromUrl?.user ?? process.env.DB_USER) || 'root',
+    password: fromUrl ? fromUrl.password : process.env.DB_PASSWORD || '',
+    database: (fromUrl?.database ?? process.env.DB_NAME) || 'pureskin_clinic',
   };
 
   // Ensure DB exists (if not, create it)

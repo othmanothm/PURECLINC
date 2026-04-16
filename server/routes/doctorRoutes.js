@@ -9,6 +9,7 @@ const {
   getPatients,
   getPatientRecord,
   updatePatientNotes,
+  updatePatientMedicalRecord,
   createOrUpdateTreatment,
 } = require('../controllers/doctorController');
 
@@ -27,6 +28,21 @@ router.put(
   [body('notes').optional().isString()],
   validate,
   updatePatientNotes
+);
+router.put(
+  '/patients/:patientId/medical-record',
+  [
+    body('skinType').optional().isString(),
+    body('complaints').optional().isString(),
+    body('dermatologicalHistory').optional().isString(),
+    body('allergies').optional().isString(),
+    body('currentMedications').optional().isString(),
+    body('pregnancyStatus').optional().isString(),
+    body('notes').optional().isString(),
+    body('generalHealth').optional().isString(),
+  ],
+  validate,
+  updatePatientMedicalRecord
 );
 router.post(
   '/appointments/:appointmentId/treatment',

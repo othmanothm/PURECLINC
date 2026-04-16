@@ -6,8 +6,10 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
+import ServicesPage from './pages/ServicesPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import VerifyEmailPage from './pages/auth/VerifyEmailPage';
 import PatientDashboard from './pages/patient/PatientDashboard';
 import PatientBillingPage from './pages/patient/PatientBillingPage';
 import MedicalProfilePage from './pages/patient/MedicalProfilePage';
@@ -29,13 +31,15 @@ import AdminOrdersPage from './pages/admin/OrdersPage';
 import AdminPatientHistoryPage from './pages/admin/AdminPatientHistoryPage';
 import SettingsPage from './pages/SettingsPage';
 import ReviewsTestPage from './pages/ReviewsTestPage';
+import PublicProductsPage from './pages/PublicProductsPage';
+import PublicProductDetailShell from './pages/PublicProductDetailShell';
 
 function App() {
   return (
     <BrowserRouter>
       <SettingsProvider>
       <AuthProvider>
-        <div className="min-h-screen bg-bg-secondary dark:bg-slate-900 text-text-primary dark:text-slate-100 transition-colors duration-200">
+        <div className="min-h-screen bg-transparent text-text-primary transition-colors duration-200 dark:bg-slate-900 dark:text-slate-100">
           <Toaster
             position="top-right"
             toastOptions={{
@@ -64,8 +68,12 @@ function App() {
         <Routes>
           {/* Public */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/products" element={<PublicProductsPage />} />
+          <Route path="/products/:id" element={<PublicProductDetailShell />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/reviews-test" element={<ReviewsTestPage />} />
 
           {/* Patient */}

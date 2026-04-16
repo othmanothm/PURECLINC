@@ -26,6 +26,11 @@ export const doctorService = {
     return response.data;
   },
 
+  async updatePatientMedicalRecord(patientId, data) {
+    const response = await api.put(`/doctor/patients/${patientId}/medical-record`, data);
+    return response.data;
+  },
+
   async createOrUpdateTreatment(appointmentId, treatmentData) {
     const response = await api.post(`/doctor/appointments/${appointmentId}/treatment`, treatmentData);
     return response.data;

@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { productService } from '../../services/productService';
+import { useAuth } from '../../auth/AuthContext';
 
 function ProductDetailPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const rtl = i18n.language === 'ar';
   const { id } = useParams();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
+  const catalogPath = pathname.startsWith('/products') ? '/products' : '/store';
+  const { user, isAuthenticated } = useAuth();
   const [product, setProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -28,6 +33,12 @@ function ProductDetailPage() {
   const addToCart = () => {
     if (!product || product.stock < quantity) {
       toast.error(t('store.insufficientStock', { stock: product?.stock || 0 }));
+      return;
+    }
+
+    if (catalogPath === '/products' && (!isAuthenticated || user?.role !== 'patient')) {
+      toast(t('store.loginToAddToCart'));
+      navigate('/login', { state: { from: { pathname } } });
       return;
     }
 
@@ -71,8 +82,14 @@ function ProductDetailPage() {
   return (
     <div className="px-4 py-8 dark:bg-slate-900">
       <div className="mx-auto max-w-4xl">
+        <Link
+          to={catalogPath}
+          className="mb-6 inline-flex text-sm font-semibold text-[#6B705C] hover:text-[#565a49] dark:text-[#8f9a7e]"
+        >
+          {rtl ? '→' : '←'} {t('common.back')}
+        </Link>
 
-        <div className="grid gap-8 rounded-lg bg-white dark:bg-slate-800 p-6 shadow-sm md:grid-cols-2">
+        <div className="grid gap-8 rounded-2xl border border-[#E5E2D8] bg-white p-6 shadow-sm dark:border-slate-600 dark:bg-slate-800 md:grid-cols-2">
           <div className="relative flex h-96 w-full items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700">
             {/* Stock Status Tags */}
             {product.stock === 0 && (

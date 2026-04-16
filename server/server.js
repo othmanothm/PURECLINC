@@ -1,6 +1,7 @@
 const http = require('http');
 const app = require('./app');
 const { initDb } = require('./config/db');
+const { startAppointmentReminderJob } = require('./jobs/appointmentReminderJob');
 
 const PORT = process.env.PORT || 5000;
 
@@ -10,6 +11,7 @@ async function start() {
   try {
     await initDb();
     console.log('Database and migrations initialised successfully');
+    startAppointmentReminderJob();
   } catch (err) {
     console.error('Failed to initialise database:', err.message);
     console.warn(

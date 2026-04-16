@@ -22,6 +22,7 @@ const {
   PAYMENT_METHOD,
   ADMIN_ALLOWED_ORDER_STATUS,
 } = require('../constants/orderConstants');
+const { notifyOrderConfirmation } = require('../services/emailNotifications');
 
 function isStripeConfigured() {
   const k = process.env.STRIPE_SECRET_KEY;
@@ -200,6 +201,18 @@ async function createCheckoutSession(req, res, next) {
       const order = await placeCodOrderTx(patient.id, orderLines, orderTotal, phone, address);
       const full = await getOrderById(order.id);
       const lineItems = await getOrderItems(order.id);
+      if (full && full.patient_email) {
+        try {
+          await notifyOrderConfirmation({
+            to: full.patient_email,
+            patientName: full.patient_name || 'Patient',
+            order: full,
+            items: lineItems,
+          });
+        } catch (mailErr) {
+          console.error('[email] COD order confirmation:', mailErr.message || mailErr);
+        }
+      }
       return res.status(201).json({
         directOrder: true,
         order: full,

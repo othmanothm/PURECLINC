@@ -10,6 +10,7 @@ const {
   ORDER_STATUS,
   PAYMENT_STATUS,
 } = require('../constants/orderConstants');
+const { notifyOrderConfirmation } = require('../services/emailNotifications');
 
 async function webhookEventAlreadyProcessed(stripeEventId) {
   const pool = getDb();
@@ -137,6 +138,21 @@ async function fulfillCheckoutSession(session, stripeEventId) {
 
     await conn.commit();
     await recordWebhookEventSafe(stripeEventId);
+
+    try {
+      const full = await getOrderById(row.id);
+      const lineItems = await getOrderItems(row.id);
+      if (full && full.patient_email) {
+        await notifyOrderConfirmation({
+          to: full.patient_email,
+          patientName: full.patient_name || 'Patient',
+          order: full,
+          items: lineItems,
+        });
+      }
+    } catch (mailErr) {
+      console.error('[email] order confirmation after Stripe:', mailErr.message || mailErr);
+    }
   } catch (err) {
     await conn.rollback();
     throw err;

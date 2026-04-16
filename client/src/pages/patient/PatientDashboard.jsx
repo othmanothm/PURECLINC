@@ -71,7 +71,7 @@ function PatientDashboard() {
   }, [user?.id]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-cyan-50/50 to-sky-100/70 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-stone-50/80 to-sky-100/70 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4 py-8">
       <div className="mx-auto max-w-7xl">
         {/* Header Section */}
         <div className="mb-8">
@@ -159,13 +159,13 @@ function PatientDashboard() {
               to="/patient/billing"
               className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg transition-all hover:scale-105 hover:shadow-xl"
             >
-              <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg transition-transform group-hover:rotate-6">
+              <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-indigo-700 text-white shadow-lg transition-transform group-hover:rotate-6">
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5H3.75m0 0h-.75m15 0h-2.25m-2.5 0H6.75m-2.25 0v.75c0 .414-.336.75-.75.75h-.75M6 7.5v3m6-3v3m6-3v3m-9 7.5h10.5a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
                 </svg>
               </div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('common.billingSummary')}</p>
-              <p className="mt-2 text-xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">{t('doctor.view')}</p>
+              <p className="mt-2 text-xl font-bold bg-gradient-to-r from-sky-600 to-indigo-700 bg-clip-text text-transparent">{t('doctor.view')}</p>
             </Link>
             <Link
               to="/patient/appointments"
@@ -247,7 +247,7 @@ function PatientDashboard() {
                 </svg>
                 {t('dashboard.viewOrders')}
               </Link>
-              <Link to="/patient/billing" className="flex items-center gap-3 rounded-lg p-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:bg-cyan-50 dark:hover:bg-slate-700 hover:text-cyan-600 dark:hover:text-cyan-400">
+              <Link to="/patient/billing" className="flex items-center gap-3 rounded-lg p-3 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-100/80 dark:hover:bg-slate-700 hover:text-sky-700 dark:hover:text-sky-400">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
@@ -255,7 +255,7 @@ function PatientDashboard() {
               </Link>
             </div>
           </div>
-          <div className="rounded-2xl bg-gradient-to-br from-sky-50 via-indigo-50 to-purple-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 p-6 shadow-lg">
+          <div className="rounded-2xl bg-gradient-to-br from-sky-50 via-stone-100/80 to-sky-100/70 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 p-6 shadow-lg">
             <div className="mb-4 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500 text-white">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

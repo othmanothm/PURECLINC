@@ -76,7 +76,7 @@ function DoctorAppointmentsPage() {
                     </div>
                     <div>
                       <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{apt.patient_name}</p>
-                      <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                         </svg>
@@ -86,6 +86,14 @@ function DoctorAppointmentsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <span>{apt.appointment_time}</span>
+                        {apt.treatment_category && (
+                          <>
+                            <span className="text-slate-400">•</span>
+                            <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-700 dark:bg-slate-600 dark:text-slate-200">
+                              {t(`appointments.treatment_${apt.treatment_category}`)}
+                            </span>
+                          </>
+                        )}
                       </div>
                       {apt.patient_phone && (
                         <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">

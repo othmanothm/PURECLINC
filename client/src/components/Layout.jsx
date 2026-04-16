@@ -104,13 +104,13 @@ function Layout({ children }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-cyan-50/50 to-sky-100/70 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-      <header className="sticky top-0 z-50 border-b border-sky-100/80 bg-white/90 dark:border-slate-700 dark:bg-slate-800/95 backdrop-blur-md shadow-sm shadow-sky-100/40">
+    <div className="min-h-screen bg-transparent dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      <header className="sticky top-0 z-50 border-b border-[#E5E2D8] bg-[#F2F0E8]/90 backdrop-blur-md shadow-sm shadow-stone-400/10 dark:border-slate-700 dark:bg-slate-800/95 dark:shadow-none">
         <div className="mx-auto max-w-7xl px-4 py-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Link
               to={getDashboardPath()}
-              className="text-xl font-bold bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent transition-transform hover:scale-105"
+              className="text-xl font-bold text-[#1A1A1A] transition-transform hover:scale-105 dark:bg-gradient-to-r dark:from-sky-400 dark:to-indigo-300 dark:bg-clip-text dark:text-transparent"
             >
               PureSkin Clinic
             </Link>
@@ -118,7 +118,7 @@ function Layout({ children }) {
               {/* Language Toggle */}
               <button
                 onClick={toggleLanguage}
-                className="flex items-center justify-center rounded-lg border border-sky-200 bg-white/90 dark:border-slate-600 dark:bg-slate-700 p-2.5 text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-50 dark:hover:bg-slate-600 hover:border-sky-300"
+                className="flex items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50/85 dark:border-slate-600 dark:bg-slate-700 p-2.5 text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-100/80 dark:hover:bg-slate-600 hover:border-sky-300"
                 title={t('common.language')}
               >
                 <span className="text-sm font-semibold">{language === 'ar' ? 'ع' : 'EN'}</span>
@@ -130,7 +130,7 @@ function Layout({ children }) {
                 onClick={() => {
                   toggleTheme();
                 }}
-                className="flex items-center justify-center rounded-lg border border-sky-200 bg-white/90 dark:border-slate-600 dark:bg-slate-700 p-2.5 text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-50 dark:hover:bg-slate-600 hover:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-sky-50 dark:focus:ring-offset-slate-900"
+                className="flex items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50/85 dark:border-slate-600 dark:bg-slate-700 p-2.5 text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-100/80 dark:hover:bg-slate-600 hover:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-sky-50 dark:focus:ring-offset-slate-900"
                 title={theme === 'dark' ? t('common.light') : t('common.dark')}
                 aria-label={theme === 'dark' ? t('common.light') : t('common.dark')}
               >
@@ -171,7 +171,7 @@ function Layout({ children }) {
               {user?.role === 'patient' && (
                 <Link
                   to="/cart"
-                  className="relative flex items-center justify-center rounded-lg border border-sky-200 bg-white/90 dark:border-slate-600 dark:bg-slate-700 p-2.5 text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-50 dark:hover:bg-slate-600 hover:border-sky-300"
+                  className="relative flex items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50/85 dark:border-slate-600 dark:bg-slate-700 p-2.5 text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-100/80 dark:hover:bg-slate-600 hover:border-sky-300"
                   title={t('common.cart')}
                 >
                   <svg
@@ -208,7 +208,7 @@ function Layout({ children }) {
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white/90 dark:border-slate-600 dark:bg-slate-700 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-50 dark:hover:bg-slate-600 hover:border-sky-300"
+                  className="flex items-center gap-2 rounded-lg border border-sky-200/80 bg-sky-50/85 dark:border-slate-600 dark:bg-slate-700 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:bg-sky-100/80 dark:hover:bg-slate-600 hover:border-sky-300"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"

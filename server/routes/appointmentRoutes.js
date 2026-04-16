@@ -35,6 +35,7 @@ router.post(
     body('doctorId').isInt().withMessage('doctorId must be an integer'),
     body('appointmentDate').isISO8601().toDate().withMessage('appointmentDate must be a valid date'),
     body('appointmentTime').matches(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).withMessage('appointmentTime must be in HH:MM format'),
+    body('treatmentCategory').isIn(['hair', 'skin', 'body']).withMessage('treatmentCategory must be hair, skin, or body'),
   ],
   validate,
   bookAppointment

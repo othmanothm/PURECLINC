@@ -105,12 +105,21 @@ async function getStoreSummary(req, res, next) {
 async function getAllUsers(req, res, next) {
   try {
     const db = getDb();
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0, search } = req.query;
+    const searchTrim = typeof search === 'string' ? search.trim() : '';
 
-    const [users] = await db.query(
-      'SELECT id, name, email, role, created_at FROM Users ORDER BY created_at DESC LIMIT ? OFFSET ?',
-      [parseInt(limit), parseInt(offset)]
-    );
+    let sql = 'SELECT id, name, email, role, created_at FROM Users';
+    const params = [];
+
+    if (searchTrim) {
+      sql += ' WHERE name LIKE ?';
+      params.push(`%${searchTrim}%`);
+    }
+
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit, 10) || 50, parseInt(offset, 10) || 0);
+
+    const [users] = await db.query(sql, params);
 
     return res.json({ users });
   } catch (err) {
@@ -267,7 +276,7 @@ async function createDoctorController(req, res, next) {
 
       const db = getDb();
       const [result] = await db.query(
-        'INSERT INTO Users (name, email, password, role) VALUES (?, ?, ?, ?)',
+        'INSERT INTO Users (name, email, password, role, email_verified) VALUES (?, ?, ?, ?, 1)',
         [name, email, passwordHash, 'doctor']
       );
       user = { id: result.insertId, name, email, role: 'doctor' };
@@ -278,12 +287,10 @@ async function createDoctorController(req, res, next) {
       const passwordHash = await bcrypt.hash(password, salt);
       
       const db = getDb();
-      await db.query('UPDATE Users SET role = ?, name = ?, password = ? WHERE id = ?', [
-        'doctor',
-        name,
-        passwordHash,
-        user.id,
-      ]);
+      await db.query(
+        'UPDATE Users SET role = ?, name = ?, password = ?, email_verified = 1 WHERE id = ?',
+        ['doctor', name, passwordHash, user.id]
+      );
       user.role = 'doctor';
       user.name = name;
     }

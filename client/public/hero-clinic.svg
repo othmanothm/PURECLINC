@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="675" viewBox="0 0 900 675" role="img" aria-label="Clinic">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0eee8"/>
+      <stop offset="50%" style="stop-color:#e5e2d9"/>
+      <stop offset="100%" style="stop-color:#d8d4c8"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8a9278"/>
+      <stop offset="100%" style="stop-color:#6b725c"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="675" fill="url(#bg)"/>
+  <ellipse cx="450" cy="520" rx="320" ry="90" fill="#c9c4b5" opacity="0.35"/>
+  <rect x="280" y="180" width="340" height="220" rx="16" fill="#faf9f6" stroke="#b8b3a3" stroke-width="2"/>
+  <rect x="300" y="200" width="120" height="80" rx="8" fill="url(#accent)" opacity="0.85"/>
+  <circle cx="450" cy="290" r="48" fill="url(#accent)"/>
+  <path d="M430 285 Q450 265 470 285 Q450 305 430 285" fill="none" stroke="#faf9f6" stroke-width="3" stroke-linecap="round"/>
+  <text x="450" y="455" text-anchor="middle" fill="#4a4d42" font-family="system-ui,Segoe UI,sans-serif" font-size="22" font-weight="600">PureSkin Clinic</text>
+  <text x="450" y="488" text-anchor="middle" fill="#6b725c" font-family="system-ui,Segoe UI,sans-serif" font-size="14">Aesthetic care</text>
+</svg>

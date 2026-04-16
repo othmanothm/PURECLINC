@@ -12,13 +12,22 @@ function PatientRecordPage() {
   const highlightAppointmentId = searchParams.get('highlightAppointment');
   const highlightHandledRef = useRef(false);
   const [patient, setPatient] = useState(null);
-  const [medicalRecord, setMedicalRecord] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [totalPaid, setTotalPaid] = useState(0);
   const [totalSessionsPrice, setTotalSessionsPrice] = useState(0);
-  const [notes, setNotes] = useState('');
+  const [medicalForm, setMedicalForm] = useState({
+    skinType: '',
+    complaints: '',
+    dermatologicalHistory: '',
+    allergies: '',
+    currentMedications: '',
+    pregnancyStatus: '',
+    notes: '',
+    generalHealth: '',
+  });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingRecord, setSavingRecord] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [treatmentForm, setTreatmentForm] = useState({ sessionPrice: '', amountPaid: '', notes: '' });
   const [completeAfterSave, setCompleteAfterSave] = useState(false);
@@ -60,11 +69,21 @@ function PatientRecordPage() {
     try {
       const data = await doctorService.getPatientRecord(patientId);
       setPatient(data.patient);
-      setMedicalRecord(data.medicalRecord);
       setAppointments(data.appointments || []);
       setTotalPaid(data.totalPaid || 0);
       setTotalSessionsPrice(data.totalSessionsPrice || 0);
-      setNotes(data.medicalRecord?.notes || '');
+      const mr = data.medicalRecord;
+      const p = data.patient;
+      setMedicalForm({
+        skinType: mr?.skin_type || '',
+        complaints: mr?.complaints || '',
+        dermatologicalHistory: mr?.dermatological_history || '',
+        allergies: mr?.allergies || '',
+        currentMedications: mr?.current_medications || '',
+        pregnancyStatus: mr?.pregnancy_status || '',
+        notes: mr?.notes || '',
+        generalHealth: p?.general_health || '',
+      });
     } catch (err) {
       console.error('Failed to load patient record:', err);
     } finally {
@@ -124,16 +143,23 @@ function PatientRecordPage() {
     return timeStr.substring(0, 5); // HH:MM format
   };
 
-  const handleSaveNotes = async () => {
-    setSaving(true);
+  const handleMedicalChange = (e) => {
+    const { name, value } = e.target;
+    setMedicalForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveClinicalRecord = async (e) => {
+    e.preventDefault();
+    setSavingRecord(true);
     try {
-      await doctorService.updatePatientNotes(patientId, notes);
-      toast.success(t('doctor.notesSaved'));
+      const res = await doctorService.updatePatientMedicalRecord(patientId, medicalForm);
+      if (res.patient) setPatient(res.patient);
+      toast.success(t('doctor.clinicalRecordSaved'));
       loadPatientRecord();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save notes');
+      toast.error(err.response?.data?.message || t('common.error'));
     } finally {
-      setSaving(false);
+      setSavingRecord(false);
     }
   };
 
@@ -188,44 +214,148 @@ function PatientRecordPage() {
           </div>
         </div>
 
-        {medicalRecord && (
-          <div className="mb-6 rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500">
-                <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.242 2.61.673m-5.8 0a2.25 2.25 0 00-2.25 2.25v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V14.25m0 0h.375c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-.375M21 12v.75m0 0v.75m0-.75v-.75m0 0h-3.375m-3.375 0h3.375" />
-                </svg>
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('doctor.patientRecord')}</h2>
+        <div className="mb-6 rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500">
+              <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.242 2.61.673m-5.8 0a2.25 2.25 0 00-2.25 2.25v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V14.25m0 0h.375c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-.375M21 12v.75m0 0v.75m0-.75v-.75m0 0h-3.375m-3.375 0h3.375" />
+              </svg>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {medicalRecord.skin_type && (
-                <div className="rounded-lg bg-sky-50 dark:bg-slate-700 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('medicalProfile.skinType')}</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">{medicalRecord.skin_type}</p>
-                </div>
-              )}
-              {medicalRecord.complaints && (
-                <div className="rounded-lg bg-sky-50 dark:bg-slate-700 p-4 md:col-span-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('medicalProfile.currentComplaints')}</p>
-                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{medicalRecord.complaints}</p>
-                </div>
-              )}
-              {medicalRecord.allergies && (
-                <div className="rounded-lg bg-red-50 dark:bg-red-900/30 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">{t('medicalProfile.allergies')}</p>
-                  <p className="mt-1 text-sm font-semibold text-red-900 dark:text-red-300">{medicalRecord.allergies}</p>
-                </div>
-              )}
-              {medicalRecord.current_medications && (
-                <div className="rounded-lg bg-amber-50 dark:bg-amber-900/30 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">{t('medicalProfile.currentMedications')}</p>
-                  <p className="mt-1 text-sm font-semibold text-amber-900 dark:text-amber-300">{medicalRecord.current_medications}</p>
-                </div>
-              )}
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('doctor.editClinicalRecord')}</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{t('doctor.patientRecord')}</p>
             </div>
           </div>
-        )}
+
+          <form onSubmit={handleSaveClinicalRecord} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="skinType">
+                {t('medicalProfile.skinType')}
+              </label>
+              <select
+                id="skinType"
+                name="skinType"
+                value={medicalForm.skinType}
+                onChange={handleMedicalChange}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+              >
+                <option value="">{t('medicalProfile.selectSkinType')}</option>
+                <option value="normal">Normal</option>
+                <option value="dry">Dry</option>
+                <option value="oily">Oily</option>
+                <option value="combination">Combination</option>
+                <option value="sensitive">Sensitive</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="complaints">
+                {t('medicalProfile.currentComplaints')}
+              </label>
+              <textarea
+                id="complaints"
+                name="complaints"
+                rows={3}
+                value={medicalForm.complaints}
+                onChange={handleMedicalChange}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="dermatologicalHistory">
+                {t('medicalProfile.dermatologicalHistory')}
+              </label>
+              <textarea
+                id="dermatologicalHistory"
+                name="dermatologicalHistory"
+                rows={3}
+                value={medicalForm.dermatologicalHistory}
+                onChange={handleMedicalChange}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="allergies">
+                  {t('medicalProfile.allergies')}
+                </label>
+                <input
+                  id="allergies"
+                  name="allergies"
+                  type="text"
+                  value={medicalForm.allergies}
+                  onChange={handleMedicalChange}
+                  className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="currentMedications">
+                  {t('medicalProfile.currentMedications')}
+                </label>
+                <input
+                  id="currentMedications"
+                  name="currentMedications"
+                  type="text"
+                  value={medicalForm.currentMedications}
+                  onChange={handleMedicalChange}
+                  className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="pregnancyStatus">
+                {t('medicalProfile.pregnancyStatus')}
+              </label>
+              <select
+                id="pregnancyStatus"
+                name="pregnancyStatus"
+                value={medicalForm.pregnancyStatus}
+                onChange={handleMedicalChange}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+              >
+                <option value="">{t('medicalProfile.selectSkinType')}</option>
+                <option value="not_applicable">{t('medicalProfile.notApplicable')}</option>
+                <option value="not_pregnant">{t('medicalProfile.notPregnant')}</option>
+                <option value="pregnant">{t('medicalProfile.pregnant')}</option>
+                <option value="breastfeeding">{t('medicalProfile.breastfeeding')}</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="generalHealth">
+                {t('medicalProfile.generalHealth')}
+              </label>
+              <textarea
+                id="generalHealth"
+                name="generalHealth"
+                rows={3}
+                value={medicalForm.generalHealth}
+                onChange={handleMedicalChange}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+                placeholder={t('medicalProfile.generalHealth')}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="notes">
+                {t('medicalProfile.additionalNotes')}
+              </label>
+              <textarea
+                id="notes"
+                name="notes"
+                rows={4}
+                value={medicalForm.notes}
+                onChange={handleMedicalChange}
+                className="block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+                placeholder={t('doctor.addNotesAboutPatient')}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={savingRecord}
+              className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:scale-[1.02] disabled:opacity-60 md:w-auto"
+            >
+              {savingRecord ? t('doctor.saving') : t('doctor.saveClinicalRecord')}
+            </button>
+          </form>
+        </div>
 
         {/* History Section */}
         <div className="mb-6 rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
@@ -439,30 +569,6 @@ function PatientRecordPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-lg">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
-              <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('doctor.doctorNotes')}</h2>
-          </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={8}
-            className="w-full rounded-xl border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-4 py-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-            placeholder={t('doctor.addNotesAboutPatient')}
-          />
-          <button
-            onClick={handleSaveNotes}
-            disabled={saving}
-            className="mt-6 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:opacity-60"
-          >
-            {saving ? t('doctor.saving') : t('doctor.saveNotes')}
-          </button>
-        </div>
       </div>
     </div>
   );

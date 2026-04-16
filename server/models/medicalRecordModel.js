@@ -79,9 +79,47 @@ async function updateMedicalRecord(patientId, data) {
   return getMedicalRecordByPatientId(patientId);
 }
 
+/**
+ * Patch-style update: only keys present on `partial` override existing values.
+ * @param {number} patientId
+ * @param {Partial<{ skinType: any, complaints: any, dermatologicalHistory: any, allergies: any, currentMedications: any, pregnancyStatus: any, notes: any }>} partial
+ */
+async function mergeAndUpdateMedicalRecord(patientId, partial) {
+  const existing = await getMedicalRecordByPatientId(patientId);
+  const merged = {
+    skinType:
+      partial.skinType !== undefined ? partial.skinType || null : existing?.skin_type ?? null,
+    complaints:
+      partial.complaints !== undefined ? partial.complaints || null : existing?.complaints ?? null,
+    dermatologicalHistory:
+      partial.dermatologicalHistory !== undefined
+        ? partial.dermatologicalHistory || null
+        : existing?.dermatological_history ?? null,
+    allergies:
+      partial.allergies !== undefined ? partial.allergies || null : existing?.allergies ?? null,
+    currentMedications:
+      partial.currentMedications !== undefined
+        ? partial.currentMedications || null
+        : existing?.current_medications ?? null,
+    pregnancyStatus:
+      partial.pregnancyStatus !== undefined
+        ? partial.pregnancyStatus || null
+        : existing?.pregnancy_status ?? null,
+    notes: partial.notes !== undefined ? partial.notes || null : existing?.notes ?? null,
+  };
+
+  if (!existing) {
+    await createMedicalRecord({ patientId, ...merged });
+  } else {
+    await updateMedicalRecord(patientId, merged);
+  }
+  return getMedicalRecordByPatientId(patientId);
+}
+
 module.exports = {
   getMedicalRecordByPatientId,
   createMedicalRecord,
   updateMedicalRecord,
+  mergeAndUpdateMedicalRecord,
 };
 
