@@ -161,7 +161,6 @@ jobs:
           overwrite: true
 
       - name: Write backend .env from secret (optional)
-        if: ${{ secrets.BACKEND_ENV_FILE != '' }}
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -169,9 +168,13 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            cat > /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env << 'EOF'
-            ${{ secrets.BACKEND_ENV_FILE }}
-            EOF
+            if [ -n "${{ secrets.BACKEND_ENV_FILE }}" ]; then
+              cat > /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env << 'EOF'
+              ${{ secrets.BACKEND_ENV_FILE }}
+              EOF
+            else
+              echo 'BACKEND_ENV_FILE is empty; keeping existing .env file.'
+            fi
 
       - name: Install backend production dependencies
         uses: appleboy/ssh-action@v1.0.3
