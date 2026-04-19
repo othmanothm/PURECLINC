@@ -1,6 +1,40 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const FALLBACK_LOCAL_API_URL = 'http://localhost:5000/api';
+
+function isLocalhostHost(hostname) {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function isLocalhostUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return isLocalhostHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function resolveApiBaseUrl() {
+  const envUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+
+  // If env URL is set and not localhost, use it as-is.
+  if (envUrl && !isLocalhostUrl(envUrl)) {
+    return envUrl;
+  }
+
+  // On deployed frontend, reuse current host and force backend port.
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    if (!isLocalhostHost(hostname)) {
+      return `${protocol}//${hostname}:9072/api`;
+    }
+  }
+
+  return envUrl || FALLBACK_LOCAL_API_URL;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
