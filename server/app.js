@@ -10,10 +10,22 @@ const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const app = express();
 
 // CORS
-const allowedOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+const allowedOrigins = [
+  'http://localhost:5173',
+  ...(process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',') : []),
+]
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: allowedOrigin,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],

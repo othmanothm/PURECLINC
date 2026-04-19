@@ -170,7 +170,7 @@ jobs:
           script: |
             cat > /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env << EOF
             PORT=${{ env.BACKEND_PORT }}
-            CLIENT_ORIGIN=http://localhost:${{ env.FRONTEND_PORT }}
+            CLIENT_ORIGIN=http://${{ secrets.SERVER_HOST }}:${{ env.FRONTEND_PORT }}
             BASE_URL=http://localhost:${{ env.BACKEND_PORT }}
 
             DATABASE_URL=mysql+pymysql://root:root@localhost:3306/pureskin_clinic
