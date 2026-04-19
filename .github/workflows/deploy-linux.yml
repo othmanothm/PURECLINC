@@ -160,7 +160,7 @@ jobs:
           rm: false
           overwrite: true
 
-      - name: Write backend .env from secret (optional)
+      - name: Write backend .env (inline constants)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -168,13 +168,34 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            if [ -n "${{ secrets.BACKEND_ENV_FILE }}" ]; then
-              cat > /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env << 'EOF'
-              ${{ secrets.BACKEND_ENV_FILE }}
-              EOF
-            else
-              echo 'BACKEND_ENV_FILE is empty; keeping existing .env file.'
-            fi
+            cat > /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env << EOF
+            PORT=${{ env.BACKEND_PORT }}
+            CLIENT_ORIGIN=http://localhost:${{ env.FRONTEND_PORT }}
+            BASE_URL=http://localhost:${{ env.BACKEND_PORT }}
+
+            DATABASE_URL=mysql+pymysql://root:root@localhost:3306/pureskin_clinic
+
+            DB_HOST=localhost
+            DB_USER=root
+            DB_PASSWORD=root
+            DB_NAME=pureskin_clinic
+
+            JWT_SECRET=super_secret_jwt_key_change_me
+            JWT_EXPIRES_IN=1h
+
+            STRIPE_SECRET_KEY=sk_test_your_key_here
+            STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+
+            SMTP_HOST=smtp.gmail.com
+            SMTP_PORT=587
+            SMTP_SECURE=false
+            SMTP_USER=mohammed.ismail2@students.alquds.edu
+            SMTP_PASS=fehpbwauhedzglix
+
+            MAIL_FROM="PureSkin Clinic <mohammed.ismail2@students.alquds.edu>"
+            EMAIL_VERIFICATION_EXPIRY_MINUTES=15
+            EMAIL_VERIFICATION_RESEND_SECONDS=60
+            EOF
 
       - name: Install backend production dependencies
         uses: appleboy/ssh-action@v1.0.3
