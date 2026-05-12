@@ -14,6 +14,8 @@ env:
   BACKEND_PORT: 9072
   FRONTEND_PORT: 9073
   EXTRA_OPEN_PORT: 9074
+  DOMAIN: pureclinic.online
+  API_DOMAIN: api.pureclinic.online
 
 jobs:
   deploy-frontend:
@@ -37,7 +39,7 @@ jobs:
       - name: Build frontend
         working-directory: ./client
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: https://api.pureclinic.online/api
           VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.VITE_STRIPE_PUBLISHABLE_KEY }}
         run: npm run build
 
@@ -76,15 +78,13 @@ jobs:
           script: |
             APP_USER=${{ secrets.SERVER_USER }}
             APP_HOME=/home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC
-            FRONTEND_PORT=${{ env.FRONTEND_PORT }}
-            EXTRA_OPEN_PORT=${{ env.EXTRA_OPEN_PORT }}
 
             if ! command -v serve >/dev/null 2>&1; then
               echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' npm install -g serve
             fi
 
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow ${FRONTEND_PORT}/tcp comment 'PURECLINC Frontend' 2>/dev/null || true
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow ${EXTRA_OPEN_PORT}/tcp comment 'PURECLINC Extra' 2>/dev/null || true
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow 9073/tcp comment 'PURECLINC Frontend' 2>/dev/null || true
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow 9074/tcp comment 'PURECLINC Extra' 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl unmask pureclinc-frontend.service 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl stop pureclinc-frontend.service 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl disable pureclinc-frontend.service 2>/dev/null || true
@@ -100,8 +100,8 @@ jobs:
             User=${APP_USER}
             WorkingDirectory=${APP_HOME}/frontend
             Environment=NODE_ENV=production
-            Environment=PORT=${FRONTEND_PORT}
-            ExecStart=${SERVE_PATH} -s . -l tcp://0.0.0.0:${FRONTEND_PORT} --single
+            Environment=PORT=9073
+            ExecStart=${SERVE_PATH} -s . -l tcp://0.0.0.0:9073 --single
             Restart=always
             RestartSec=10
 
@@ -113,7 +113,8 @@ jobs:
             rm -f /tmp/pureclinc-frontend.service
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl daemon-reload
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl enable pureclinc-frontend.service
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl restart pureclinc-frontend.service || echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl start pureclinc-frontend.service
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl restart pureclinc-frontend.service || \
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl start pureclinc-frontend.service
 
   deploy-backend:
     name: Deploy Backend
@@ -160,7 +161,7 @@ jobs:
           rm: false
           overwrite: true
 
-      - name: Write backend .env (inline constants)
+      - name: Write backend .env
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -168,12 +169,13 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            cat > /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env << EOF
-            PORT=${{ env.BACKEND_PORT }}
-            CLIENT_ORIGIN=http://${{ secrets.SERVER_HOST }}:${{ env.FRONTEND_PORT }},http://${{ secrets.SERVER_HOST }}:${{ env.BACKEND_PORT }}
-            BASE_URL=http://localhost:${{ env.BACKEND_PORT }}
-
-            DATABASE_URL=mysql+pymysql://root:root@localhost:3306/pureskin_clinic
+            # Only write .env if it doesn't already exist on the server
+            ENV_FILE=/home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend/.env
+            if [ ! -s "${ENV_FILE}" ]; then
+              cat > "${ENV_FILE}" << 'EOF'
+            PORT=9072
+            CLIENT_ORIGIN=https://pureclinic.online,https://www.pureclinic.online,http://pureclinic.online,http://www.pureclinic.online
+            BASE_URL=https://api.pureclinic.online
 
             DB_HOST=localhost
             DB_USER=root
@@ -196,6 +198,10 @@ jobs:
             EMAIL_VERIFICATION_EXPIRY_MINUTES=15
             EMAIL_VERIFICATION_RESEND_SECONDS=60
             EOF
+              echo ".env created."
+            else
+              echo ".env already exists — skipping to preserve server values."
+            fi
 
       - name: Install backend production dependencies
         uses: appleboy/ssh-action@v1.0.3
@@ -205,15 +211,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            BACKEND_DIR=/home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend
-            cd ${BACKEND_DIR}
+            cd /home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC/backend
             npm ci --omit=dev
-            if [ ! -f .env ] && [ -f app.env ]; then
-              cp app.env .env
-            fi
-            if [ -f .env ] && ! grep -q '^PORT=' .env; then
-              echo 'PORT=${{ env.BACKEND_PORT }}' >> .env
-            fi
 
       - name: Setup backend systemd service
         uses: appleboy/ssh-action@v1.0.3
@@ -225,11 +224,8 @@ jobs:
           script: |
             APP_USER=${{ secrets.SERVER_USER }}
             APP_HOME=/home/${{ secrets.SERVER_USER }}/WebSites/PURECLINC
-            BACKEND_PORT=${{ env.BACKEND_PORT }}
-            EXTRA_OPEN_PORT=${{ env.EXTRA_OPEN_PORT }}
 
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow ${BACKEND_PORT}/tcp comment 'PURECLINC Backend' 2>/dev/null || true
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow ${EXTRA_OPEN_PORT}/tcp comment 'PURECLINC Extra' 2>/dev/null || true
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' ufw allow 9072/tcp comment 'PURECLINC Backend' 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl unmask pureclinc-backend.service 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl stop pureclinc-backend.service 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl disable pureclinc-backend.service 2>/dev/null || true
@@ -244,8 +240,8 @@ jobs:
             Type=simple
             User=${APP_USER}
             WorkingDirectory=${APP_HOME}/backend
+            EnvironmentFile=${APP_HOME}/backend/.env
             Environment=NODE_ENV=production
-            Environment=PORT=${BACKEND_PORT}
             ExecStart=${NODE_PATH} server.js
             Restart=always
             RestartSec=10
@@ -258,7 +254,8 @@ jobs:
             rm -f /tmp/pureclinc-backend.service
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl daemon-reload
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl enable pureclinc-backend.service
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl restart pureclinc-backend.service || echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl start pureclinc-backend.service
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl restart pureclinc-backend.service || \
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S -p '' systemctl start pureclinc-backend.service
 
       - name: Health check
         uses: appleboy/ssh-action@v1.0.3
@@ -268,9 +265,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            echo 'Checking backend on port ${{ env.BACKEND_PORT }}...'
-            curl -fsS http://localhost:${{ env.BACKEND_PORT }}/api/health || curl -fsS http://localhost:${{ env.BACKEND_PORT }} || echo 'Backend health check failed (non-blocking).'
-            echo 'Checking frontend on port ${{ env.FRONTEND_PORT }}...'
-            curl -fsS http://localhost:${{ env.FRONTEND_PORT }} || echo 'Frontend health check failed (non-blocking).'
-            echo 'Checking extra service on port ${{ env.EXTRA_OPEN_PORT }}...'
-            curl -fsS http://localhost:${{ env.EXTRA_OPEN_PORT }} || echo 'Extra port check failed (non-blocking).'
+            sleep 5
+            curl -fsS http://localhost:9072/api/health || \
+            curl -fsS http://localhost:9072 || \
+            echo 'Backend health check failed (non-blocking).'
+            curl -fsS http://localhost:9073 || \
+            echo 'Frontend health check failed (non-blocking).'
