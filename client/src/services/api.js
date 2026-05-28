@@ -72,9 +72,18 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    const status = error.response?.status;
+    const url = error.config?.url || '';
+    const isAuthCredentialRequest = /\/auth\/(login|admin-login|register|verify-email|resend-verification)(\/|$|\?)/.test(
+      url
+    );
+    if ((status === 401 || status === 403) && !isAuthCredentialRequest) {
       window.localStorage.removeItem('pureskin_auth');
-      window.location.replace('/');
+      const onLoginPage =
+        typeof window !== 'undefined' && window.location.pathname === '/login';
+      if (!onLoginPage) {
+        window.location.replace('/login');
+      }
     }
     return Promise.reject(error);
   }

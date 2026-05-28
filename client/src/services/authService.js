@@ -25,7 +25,18 @@ export const authService = {
       email,
       password,
     });
-    return response.data;
+    const data = response.data;
+    if (!response.status || response.status < 200 || response.status >= 300) {
+      const err = new Error(data?.message || 'Login failed');
+      err.response = response;
+      throw err;
+    }
+    if (!data?.token || !data?.user) {
+      const err = new Error(data?.message || 'Invalid login response');
+      err.response = { status: response.status, data };
+      throw err;
+    }
+    return data;
   },
 
   async adminLogin(email, password) {

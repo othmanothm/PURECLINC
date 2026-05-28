@@ -14,18 +14,23 @@ function LoginPage() {
   const [needsEmailVerify, setNeedsEmailVerify] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login, clearSession } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setNeedsEmailVerify(false);
     setLoading(true);
+    clearSession();
 
     try {
       const response = await authService.login(email, password);
       const { token, user } = response;
-      
+
+      if (!token || !user?.role) {
+        throw new Error(t('auth.loginFailed'));
+      }
+
       login(token, user);
 
       const from = location.state?.from?.pathname;
@@ -39,6 +44,7 @@ function LoginPage() {
         navigate('/', { replace: true });
       }
     } catch (err) {
+      clearSession();
       const data = err.response?.data;
       const errorMessage = data?.message || err.message || t('auth.loginFailed');
       setError(errorMessage);

@@ -75,7 +75,16 @@ export function AuthProvider({ children }) {
     initAuth();
   }, []);
 
+  const clearSession = useCallback(() => {
+    setToken(null);
+    setUser(null);
+    window.localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   const login = useCallback((authToken, authUser) => {
+    if (!authToken || !authUser?.role) {
+      return;
+    }
     setToken(authToken);
     // Only store essential user properties to prevent unnecessary re-renders
     if (authUser) {
@@ -129,8 +138,9 @@ export function AuthProvider({ children }) {
     loading,
     login,
     logout,
+    clearSession,
     isAuthenticated: Boolean(token),
-  }), [memoizedUser, token, loading, login, logout]);
+  }), [memoizedUser, token, loading, login, logout, clearSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
