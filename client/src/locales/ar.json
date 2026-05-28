@@ -154,6 +154,9 @@
     "noProducts": "لم يتم العثور على منتجات.",
     "searchPlaceholder": "ابحث عن المنتجات...",
     "allCategories": "جميع الفئات",
+    "priceFilter": "السعر",
+    "priceMin": "الحد الأدنى",
+    "priceMax": "الحد الأقصى",
     "discount": "خصم",
     "off": "خصم"
   },

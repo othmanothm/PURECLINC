@@ -1,15 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { productService } from '../../services/productService';
+import ProductCatalogFilters from '../../components/store/ProductCatalogFilters';
+import { useProductCatalog } from '../../hooks/useProductCatalog';
 
 function StorePage() {
   const { t } = useTranslation();
-  const [products, setProducts] = useState([]);
-  const [category, setCategory] = useState('');
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
+  const {
+    products,
+    loading,
+    category,
+    setCategory,
+    search,
+    setSearch,
+    priceBounds,
+    minPrice,
+    maxPrice,
+    setMinPrice,
+    setMaxPrice,
+  } = useProductCatalog();
   const [addingToCart, setAddingToCart] = useState({});
   const [quantities, setQuantities] = useState({});
 
@@ -96,57 +106,35 @@ function StorePage() {
     }, 500);
   };
 
-  useEffect(() => {
-    loadProducts();
-  }, [category, search]);
-
-  const loadProducts = async () => {
-    setLoading(true);
-    try {
-      const data = await productService.getProducts({ category, search });
-      setProducts(data.products || []);
-    } catch (err) {
-      console.error('Failed to load products:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const navigate = useNavigate();
 
   return (
-    <div className="px-4 py-8 dark:bg-slate-900">
-      <div className="mx-auto max-w-6xl">
+    <div className="px-4 py-6 dark:bg-slate-900 sm:px-6 lg:py-8">
+      <div className="mx-auto max-w-7xl">
         <h1 className="mb-6 text-2xl font-bold text-slate-900 dark:text-slate-100">{t('store.title')}</h1>
 
-        {/* Filters */}
-        <div className="mb-6 flex gap-4">
-          <input
-            type="text"
-            placeholder={t('store.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(260px,280px)_minmax(0,1fr)] lg:gap-8">
+          <ProductCatalogFilters
+            variant="patient"
+            sidebarClassName="w-full shrink-0"
+            search={search}
+            category={category}
+            onSearchChange={setSearch}
+            onCategoryChange={setCategory}
+            priceBounds={priceBounds}
+            minPrice={minPrice}
+            maxPrice={maxPrice}
+            onMinPriceChange={setMinPrice}
+            onMaxPriceChange={setMaxPrice}
           />
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm"
-          >
-            <option value="">{t('store.allCategories')}</option>
-            <option value="Skin Care">Skin Care</option>
-            <option value="Hair Care">Hair Care</option>
-            <option value="Body Care">Body Care</option>
-          </select>
-        </div>
 
-        {/* Products Grid */}
-        {loading ? (
-          <p className="text-center text-slate-500 dark:text-slate-400">{t('common.loading')}</p>
-        ) : products.length === 0 ? (
-          <p className="text-center text-slate-500 dark:text-slate-400">{t('store.noProducts')}</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <section className="min-w-0">
+            {loading ? (
+              <p className="py-12 text-center text-slate-500 dark:text-slate-400">{t('common.loading')}</p>
+            ) : products.length === 0 ? (
+              <p className="py-12 text-center text-slate-500 dark:text-slate-400">{t('store.noProducts')}</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 2xl:grid-cols-3">
             {products.map((product) => (
               <div
                 key={product.id}
@@ -283,8 +271,10 @@ function StorePage() {
                 )}
               </div>
             ))}
-          </div>
-        )}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

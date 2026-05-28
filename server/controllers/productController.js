@@ -1,5 +1,6 @@
 const {
   getAllProducts,
+  getProductPriceBounds,
   getProductById,
   createProduct,
   updateProduct,
@@ -12,18 +13,44 @@ function isAdminRequest(req) {
   return typeof req.baseUrl === 'string' && req.baseUrl.includes('/admin');
 }
 
+function parseOptionalPrice(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 async function getProducts(req, res, next) {
   try {
-    const { category, search, limit = 50, offset = 0 } = req.query;
+    const { category, search, limit = 50, offset = 0, minPrice, maxPrice } = req.query;
     const includeInactive = isAdminRequest(req);
-    const products = await getAllProducts({
-      category,
-      search,
-      limit: parseInt(limit, 10),
-      offset: parseInt(offset, 10),
-      includeInactive,
-    });
-    return res.json({ products });
+    const parsedMin = parseOptionalPrice(minPrice);
+    const parsedMax = parseOptionalPrice(maxPrice);
+
+    const [products, bounds] = await Promise.all([
+      getAllProducts({
+        category,
+        search,
+        limit: parseInt(limit, 10),
+        offset: parseInt(offset, 10),
+        includeInactive,
+        minPrice: parsedMin,
+        maxPrice: parsedMax,
+      }),
+      getProductPriceBounds({ category, search, includeInactive }),
+    ]);
+
+    const defaultMin = 0;
+    const defaultMax = 750;
+    const priceBounds = {
+      min: bounds.min != null ? Math.floor(bounds.min) : defaultMin,
+      max: bounds.max != null ? Math.ceil(bounds.max) : defaultMax,
+    };
+    if (priceBounds.min > priceBounds.max) {
+      priceBounds.min = defaultMin;
+      priceBounds.max = defaultMax;
+    }
+
+    return res.json({ products, priceBounds });
   } catch (err) {
     return next(err);
   }

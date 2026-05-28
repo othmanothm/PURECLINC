@@ -155,6 +155,9 @@
     "noProducts": "No products found.",
     "searchPlaceholder": "Search products...",
     "allCategories": "All Categories",
+    "priceFilter": "Price",
+    "priceMin": "Min",
+    "priceMax": "Max",
     "discount": "Discount",
     "off": "off"
   },

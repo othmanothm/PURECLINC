@@ -1,10 +1,6 @@
 const { getDb } = require('../config/db');
 
-async function getAllProducts({ category, search, limit = 50, offset = 0, includeInactive = false } = {}) {
-  const db = getDb();
-  let query = 'SELECT * FROM Products WHERE 1=1';
-  const params = [];
-
+function appendCatalogFilters(query, params, { category, search, includeInactive, minPrice, maxPrice }) {
   if (!includeInactive) {
     query += ' AND (is_active = 1 OR is_active IS NULL)';
   }
@@ -20,11 +16,64 @@ async function getAllProducts({ category, search, limit = 50, offset = 0, includ
     params.push(searchTerm, searchTerm);
   }
 
+  if (minPrice !== undefined && minPrice !== null && minPrice !== '') {
+    query += ' AND price >= ?';
+    params.push(Number(minPrice));
+  }
+
+  if (maxPrice !== undefined && maxPrice !== null && maxPrice !== '') {
+    query += ' AND price <= ?';
+    params.push(Number(maxPrice));
+  }
+
+  return query;
+}
+
+async function getAllProducts({
+  category,
+  search,
+  limit = 50,
+  offset = 0,
+  includeInactive = false,
+  minPrice,
+  maxPrice,
+} = {}) {
+  const db = getDb();
+  let query = 'SELECT * FROM Products WHERE 1=1';
+  const params = [];
+
+  query = appendCatalogFilters(query, params, {
+    category,
+    search,
+    includeInactive,
+    minPrice,
+    maxPrice,
+  });
+
   query += ' ORDER BY id DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
   const [rows] = await db.query(query, params);
   return rows;
+}
+
+async function getProductPriceBounds({ category, search, includeInactive = false } = {}) {
+  const db = getDb();
+  let query = 'SELECT MIN(price) AS minPrice, MAX(price) AS maxPrice FROM Products WHERE 1=1';
+  const params = [];
+
+  query = appendCatalogFilters(query, params, {
+    category,
+    search,
+    includeInactive,
+    minPrice: undefined,
+    maxPrice: undefined,
+  });
+
+  const [rows] = await db.query(query, params);
+  const min = rows[0]?.minPrice != null ? Number(rows[0].minPrice) : null;
+  const max = rows[0]?.maxPrice != null ? Number(rows[0].maxPrice) : null;
+  return { min, max };
 }
 
 async function getProductById(productId) {
@@ -220,6 +269,7 @@ async function getLowStockProducts(limit = 25) {
 
 module.exports = {
   getAllProducts,
+  getProductPriceBounds,
   getProductById,
   createProduct,
   updateProduct,

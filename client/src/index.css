@@ -209,6 +209,81 @@ div {
   direction: ltr;
 }
 
+/* Dual-thumb price range (store catalog sidebar) */
+.price-range-input {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  width: 100%;
+  margin: 0;
+  height: 16px;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.price-range-input--compact::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.price-range-input--compact::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.price-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.price-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.price-range-input--patient::-webkit-slider-thumb {
+  background: #0284c7;
+}
+
+.price-range-input--patient::-moz-range-thumb {
+  background: #0284c7;
+}
+
+.price-range-input--public::-webkit-slider-thumb {
+  background: #6b705c;
+}
+
+.price-range-input--public::-moz-range-thumb {
+  background: #6b705c;
+}
+
+.price-range-input--max {
+  z-index: 2;
+}
+
+.price-range-input--min {
+  z-index: 1;
+}
+
+.product-catalog-filters--public .price-range-track-active {
+  background: #6b705c;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

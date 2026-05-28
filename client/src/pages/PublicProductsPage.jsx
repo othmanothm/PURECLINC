@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import PublicPureHeader from '../components/PublicPureHeader';
-import { productService } from '../services/productService';
+import ProductCatalogFilters from '../components/store/ProductCatalogFilters';
+import { useProductCatalog } from '../hooks/useProductCatalog';
 import { useAuth } from '../auth/AuthContext';
 
 /**
@@ -15,10 +16,19 @@ export default function PublicProductsPage() {
   const location = useLocation();
   const { user, isAuthenticated } = useAuth();
   const rtl = i18n.language === 'ar';
-  const [products, setProducts] = useState([]);
-  const [category, setCategory] = useState('');
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
+  const {
+    products,
+    loading,
+    category,
+    setCategory,
+    search,
+    setSearch,
+    priceBounds,
+    minPrice,
+    maxPrice,
+    setMinPrice,
+    setMaxPrice,
+  } = useProductCatalog();
   const [addingToCart, setAddingToCart] = useState({});
   const [quantities, setQuantities] = useState({});
 
@@ -103,29 +113,6 @@ export default function PublicProductsPage() {
     }, 500);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const data = await productService.getProducts({ category, search });
-        if (!cancelled) setProducts(data.products || []);
-      } catch (err) {
-        console.error('Failed to load products:', err);
-        if (!cancelled) setProducts([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [category, search]);
-
-  const inputCls =
-    'rounded-xl border border-[#E5E2D8] bg-white px-3 py-2.5 text-sm text-[#1A1A1A] shadow-sm placeholder:text-[#667085]/80 focus:border-[#6B705C] focus:outline-none focus:ring-2 focus:ring-[#6B705C]/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
-
   return (
     <div
       dir={rtl ? 'rtl' : 'ltr'}
@@ -138,32 +125,27 @@ export default function PublicProductsPage() {
         </h1>
         <p className="mb-8 max-w-2xl text-[#667085] dark:text-slate-400">{t('publicSite.productsIntro')}</p>
 
-        <div className={`mb-8 flex flex-col gap-3 sm:flex-row ${rtl ? 'sm:flex-row-reverse' : ''}`}>
-          <input
-            type="text"
-            placeholder={t('store.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={`flex-1 ${inputCls}`}
+        <div className={`flex flex-col gap-6 lg:flex-row lg:items-start ${rtl ? 'lg:flex-row-reverse' : ''}`}>
+          <ProductCatalogFilters
+            variant="public"
+            search={search}
+            category={category}
+            onSearchChange={setSearch}
+            onCategoryChange={setCategory}
+            priceBounds={priceBounds}
+            minPrice={minPrice}
+            maxPrice={maxPrice}
+            onMinPriceChange={setMinPrice}
+            onMaxPriceChange={setMaxPrice}
           />
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className={`sm:w-48 ${inputCls}`}
-          >
-            <option value="">{t('store.allCategories')}</option>
-            <option value="Skin Care">Skin Care</option>
-            <option value="Hair Care">Hair Care</option>
-            <option value="Body Care">Body Care</option>
-          </select>
-        </div>
 
+          <div className="min-w-0 flex-1">
         {loading ? (
           <p className="text-center text-[#667085] dark:text-slate-400">{t('common.loading')}</p>
         ) : products.length === 0 ? (
           <p className="text-center text-[#667085] dark:text-slate-400">{t('store.noProducts')}</p>
         ) : (
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
             {products.map((product) => (
               <div
                 key={product.id}
@@ -318,6 +300,8 @@ export default function PublicProductsPage() {
             ))}
           </div>
         )}
+          </div>
+        </div>
       </main>
     </div>
   );
