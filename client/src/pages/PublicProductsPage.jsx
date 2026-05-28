@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import PublicPureHeader from '../components/PublicPureHeader';
 import ProductCatalogFilters from '../components/store/ProductCatalogFilters';
+import ProductCardImage from '../components/store/ProductCardImage';
 import { useProductCatalog } from '../hooks/useProductCatalog';
 import { useAuth } from '../auth/AuthContext';
 
@@ -23,7 +24,6 @@ export default function PublicProductsPage() {
     setCategory,
     search,
     setSearch,
-    priceBounds,
     minPrice,
     maxPrice,
     setMinPrice,
@@ -132,7 +132,6 @@ export default function PublicProductsPage() {
             category={category}
             onSearchChange={setSearch}
             onCategoryChange={setCategory}
-            priceBounds={priceBounds}
             minPrice={minPrice}
             maxPrice={maxPrice}
             onMinPriceChange={setMinPrice}
@@ -162,42 +161,12 @@ export default function PublicProductsPage() {
                   </div>
                 )}
                 <Link to={`/products/${product.id}`} className="block">
-                  <div
-                    className={`mb-3 flex h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-[#F2F0E8] dark:bg-slate-700 ${
-                      product.stock === 0 ? 'opacity-60' : ''
-                    }`}
-                  >
-                    {product.image_url ? (
-                      <img
-                        src={product.image_url}
-                        alt={product.name}
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          e.target.nextSibling.style.display = 'flex';
-                        }}
-                      />
-                    ) : null}
-                    <div
-                      className="flex h-full w-full items-center justify-center text-[#667085]"
-                      style={{ display: product.image_url ? 'none' : 'flex' }}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={1.5}
-                        stroke="currentColor"
-                        className="h-12 w-12"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6.75A1.5 1.5 0 0021.75 5.25h-16.5A1.5 1.5 0 003.75 6.75v12.75a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
+                  <ProductCardImage
+                    src={product.image_url}
+                    alt={product.name}
+                    variant="public"
+                    dimmed={product.stock === 0}
+                  />
                   <h3
                     className={`font-bold text-[#1A1A1A] dark:text-slate-100 ${
                       product.stock === 0 ? 'text-slate-400' : ''

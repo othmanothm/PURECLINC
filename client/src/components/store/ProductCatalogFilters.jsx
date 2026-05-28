@@ -1,6 +1,11 @@
 import PropTypes from 'prop-types';
 import { useTranslation } from 'react-i18next';
-import { clampPrice, formatUsdPrice, resolvePriceRange } from '../../utils/productPrice';
+import {
+  clampPrice,
+  FIXED_PRICE_BOUNDS,
+  formatUsdPrice,
+  resolvePriceRange,
+} from '../../utils/productPrice';
 
 const VARIANT_STYLES = {
   patient: {
@@ -41,11 +46,7 @@ function PriceRangeFilter({
   styles,
 }) {
   const { t } = useTranslation();
-  const { min: activeMin, max: activeMax } = resolvePriceRange(
-    { min: minBound, max: maxBound },
-    minPrice,
-    maxPrice
-  );
+  const { min: activeMin, max: activeMax } = resolvePriceRange(minPrice, maxPrice);
   const span = Math.max(maxBound - minBound, 1);
   const minPercent = ((activeMin - minBound) / span) * 100;
   const maxPercent = ((activeMax - minBound) / span) * 100;
@@ -181,7 +182,6 @@ export default function ProductCatalogFilters({
   category,
   onSearchChange,
   onCategoryChange,
-  priceBounds,
   minPrice,
   maxPrice,
   onMinPriceChange,
@@ -235,8 +235,8 @@ export default function ProductCatalogFilters({
         </div>
 
         <PriceRangeFilter
-          minBound={priceBounds.min}
-          maxBound={priceBounds.max}
+          minBound={FIXED_PRICE_BOUNDS.min}
+          maxBound={FIXED_PRICE_BOUNDS.max}
           minPrice={minPrice}
           maxPrice={maxPrice}
           onMinChange={onMinPriceChange}
@@ -255,10 +255,6 @@ ProductCatalogFilters.propTypes = {
   category: PropTypes.string.isRequired,
   onSearchChange: PropTypes.func.isRequired,
   onCategoryChange: PropTypes.func.isRequired,
-  priceBounds: PropTypes.shape({
-    min: PropTypes.number.isRequired,
-    max: PropTypes.number.isRequired,
-  }).isRequired,
   minPrice: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   maxPrice: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   onMinPriceChange: PropTypes.func.isRequired,

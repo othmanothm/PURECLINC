@@ -1,6 +1,11 @@
-/** Default catalog price filter bounds when the API has no products yet. */
+/** Fixed catalog price filter range (USD). Not derived from product prices. */
 export const DEFAULT_PRICE_FILTER_MIN = 0;
 export const DEFAULT_PRICE_FILTER_MAX = 750;
+
+export const FIXED_PRICE_BOUNDS = {
+  min: DEFAULT_PRICE_FILTER_MIN,
+  max: DEFAULT_PRICE_FILTER_MAX,
+};
 
 export function toProductListPrice(product) {
   return Number(product?.price);
@@ -17,27 +22,13 @@ export function formatUsdPrice(amount, { decimals = 0 } = {}) {
   }).format(n);
 }
 
-export function normalizePriceBounds(bounds) {
-  const min =
-    bounds?.min != null && Number.isFinite(Number(bounds.min))
-      ? Math.floor(Number(bounds.min))
-      : DEFAULT_PRICE_FILTER_MIN;
-  const max =
-    bounds?.max != null && Number.isFinite(Number(bounds.max))
-      ? Math.ceil(Number(bounds.max))
-      : DEFAULT_PRICE_FILTER_MAX;
-  if (min >= max) {
-    return { min: DEFAULT_PRICE_FILTER_MIN, max: DEFAULT_PRICE_FILTER_MAX };
-  }
-  return { min, max };
-}
-
 /**
- * Resolve filter range: empty min/max uses catalog bounds; min cannot exceed max.
+ * Resolve filter range against fixed $0–$750 bounds.
+ * Empty min/max uses 0 / 750.
  */
-export function resolvePriceRange(priceBounds, minPrice, maxPrice) {
-  const boundMin = priceBounds.min;
-  const boundMax = priceBounds.max;
+export function resolvePriceRange(minPrice, maxPrice) {
+  const boundMin = FIXED_PRICE_BOUNDS.min;
+  const boundMax = FIXED_PRICE_BOUNDS.max;
 
   let min =
     minPrice === '' || minPrice === null || minPrice === undefined
@@ -67,8 +58,8 @@ export function clampPrice(value, min, max) {
 }
 
 /** Filter by list price (product.price), inclusive. */
-export function filterProductsByPrice(products, priceBounds, minPrice, maxPrice) {
-  const { min, max } = resolvePriceRange(priceBounds, minPrice, maxPrice);
+export function filterProductsByPrice(products, minPrice, maxPrice) {
+  const { min, max } = resolvePriceRange(minPrice, maxPrice);
   return products.filter((product) => {
     const price = toProductListPrice(product);
     if (!Number.isFinite(price)) return false;
