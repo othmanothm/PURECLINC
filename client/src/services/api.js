@@ -18,27 +18,17 @@ function isLocalhostUrl(url) {
 function resolveApiBaseUrl() {
   const envUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 
-  if (typeof window !== 'undefined') {
-    const { protocol, hostname } = window.location;
-
-    // Local Vite dev must hit local backend — even if .env points at production.
-    if (isLocalhostHost(hostname)) {
-      if (envUrl && isLocalhostUrl(envUrl)) {
-        return envUrl;
-      }
-      return FALLBACK_LOCAL_API_URL;
-    }
-
-    if (!isLocalhostHost(hostname)) {
-      if (envUrl && !isLocalhostUrl(envUrl)) {
-        return envUrl;
-      }
-      return `${protocol}//${hostname}:9072/api`;
-    }
-  }
-
+  // If env URL is set and not localhost, use it as-is.
   if (envUrl && !isLocalhostUrl(envUrl)) {
     return envUrl;
+  }
+
+  // On deployed frontend, reuse current host and force backend port.
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    if (!isLocalhostHost(hostname)) {
+      return `${protocol}//${hostname}:9072/api`;
+    }
   }
 
   return envUrl || FALLBACK_LOCAL_API_URL;

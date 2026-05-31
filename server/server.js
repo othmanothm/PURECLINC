@@ -14,11 +14,8 @@ async function start() {
     startAppointmentReminderJob();
   } catch (err) {
     console.error('Failed to initialise database:', err.message);
-    if (err.stack) {
-      console.error(err.stack);
-    }
     console.warn(
-      '⚠️ Warning: Server is running WITHOUT a database connection. Appointment booking will return 503 until MySQL is running and migrations succeed.'
+      '⚠️ Warning: Server is running WITHOUT a database connection. Any endpoint يحتاج DB ممكن يعطي أخطاء.'
     );
   }
 

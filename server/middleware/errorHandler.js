@@ -16,7 +16,7 @@ function errorHandler(err, req, res, next) {
       code: 'DB_NOT_READY',
     });
   }
-  const status = err.status || err.statusCode || 500;
+  const status = err.status || 500;
   res.status(status).json({
     message: err.message || 'Internal Server Error',
     details: err.details || null,

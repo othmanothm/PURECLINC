@@ -1,9 +1,10 @@
 const { getAllDoctors, getDoctorByUserId } = require('../models/doctorModel');
 const {
-  createAppointmentWithSlotGuard,
+  createAppointment,
   getAppointmentById,
   getPatientAppointments,
   getDoctorAppointments,
+  getAppointmentsByDateAndDoctor,
   updateAppointmentStatus,
 } = require('../models/appointmentModel');
 const { getPatientByUserId } = require('../models/patientModel');
@@ -11,21 +12,15 @@ const {
   APPOINTMENT_STATUS,
   isValidAppointmentStatus,
   canTransitionTo,
+  statusBlocksCalendarSlot,
 } = require('../constants/appointmentStatus');
-const {
-  findBlockingAppointment,
-  getBlockingSlotTimes,
-  logAppointmentBook,
-  parseDoctorId,
-  normalizeBookingFields,
-} = require('../lib/appointmentSlotService');
 const { assertDoctorMaySetAppointmentCompleted } = require('../lib/appointmentCompletionGate');
 const {
   notifyAppointmentBooked,
   notifyAppointmentConfirmed,
 } = require('../services/emailNotifications');
-const { getDb } = require('../config/db');
 
+// Available time slots (9 AM to 5 PM, hourly)
 const TIME_SLOTS = [
   '09:00',
   '10:00',
@@ -55,25 +50,15 @@ async function getAvailableSlots(req, res, next) {
       return res.status(400).json({ message: 'doctorId and date are required' });
     }
 
-    const { doctorId: doctorIdNum, dateStr } = normalizeBookingFields({
-      doctorId,
-      appointmentDate: date,
-      appointmentTime: '00:00',
-    });
-
-    if (!doctorIdNum || !dateStr) {
-      return res.status(400).json({ message: 'doctorId and date are required' });
-    }
-
-    const pool = getDb();
-    const bookedTimes = new Set(await getBlockingSlotTimes(pool, doctorIdNum, dateStr));
-
-    logAppointmentBook('slots', {
-      doctorId: doctorIdNum,
-      appointmentDateRaw: date,
-      appointmentDateNormalized: dateStr,
-      blockingSlotTimes: [...bookedTimes],
-    });
+    const bookedAppointments = await getAppointmentsByDateAndDoctor(
+      parseInt(doctorId),
+      date
+    );
+    const bookedTimes = new Set(
+      bookedAppointments
+        .filter((apt) => statusBlocksCalendarSlot(apt.status))
+        .map((apt) => apt.appointment_time)
+    );
 
     const availableSlots = TIME_SLOTS.filter((slot) => !bookedTimes.has(slot));
 
@@ -93,36 +78,23 @@ async function bookAppointment(req, res, next) {
     }
 
     const { doctorId, appointmentDate, appointmentTime, treatmentCategory } = req.body;
-    const appointmentDateRaw = appointmentDate;
-    const appointmentTimeRaw = appointmentTime;
 
-    const pool = getDb();
-    const { blocking, doctorIdNum, dateStr, timeStr } = await findBlockingAppointment(pool, {
-      doctorId,
-      appointmentDate,
-      appointmentTime,
-    });
+    // Check if slot is available
+    const booked = await getAppointmentsByDateAndDoctor(doctorId, appointmentDate);
+    const isBooked = booked.some(
+      (apt) =>
+        apt.appointment_time === appointmentTime && statusBlocksCalendarSlot(apt.status)
+    );
 
-    logAppointmentBook('create-check', {
-      doctorId: doctorIdNum,
-      appointmentDateRaw,
-      appointmentDateNormalized: dateStr,
-      appointmentTimeRaw,
-      appointmentTimeNormalized: timeStr,
-      blockingFound: Boolean(blocking),
-      blockingAppointmentId: blocking?.id ?? null,
-      blockingStatus: blocking?.status ?? null,
-    });
-
-    if (blocking) {
+    if (isBooked) {
       return res.status(409).json({ message: 'Time slot is already booked' });
     }
 
-    const appointment = await createAppointmentWithSlotGuard({
+    const appointment = await createAppointment({
       patientId: patient.id,
-      doctorId: doctorIdNum,
-      appointmentDate: dateStr,
-      appointmentTime: timeStr,
+      doctorId,
+      appointmentDate,
+      appointmentTime,
       treatmentCategory,
       status: APPOINTMENT_STATUS.PENDING,
     });
@@ -135,8 +107,8 @@ async function bookAppointment(req, res, next) {
           patientName: fullApt.patient_name || 'Patient',
           doctorName: fullApt.doctor_name || 'Doctor',
           specialization: fullApt.specialization,
-          date: dateStr,
-          time: timeStr,
+          date: String(appointmentDate),
+          time: appointmentTime,
           treatmentCategory,
           statusNote:
             'We received your appointment request. It is pending confirmation by the clinic.',
@@ -146,22 +118,8 @@ async function bookAppointment(req, res, next) {
       }
     }
 
-    logAppointmentBook('create-success', {
-      doctorId: doctorIdNum,
-      appointmentDateNormalized: dateStr,
-      appointmentTimeNormalized: timeStr,
-      appointmentId: appointment.id,
-    });
-
     return res.status(201).json({ appointment });
   } catch (err) {
-    if (err.status === 409) {
-      logAppointmentBook('create-rejected', {
-        doctorId: parseDoctorId(req.body?.doctorId),
-        message: err.message,
-      });
-      return res.status(409).json({ message: 'Time slot is already booked' });
-    }
     return next(err);
   }
 }
@@ -219,7 +177,7 @@ async function updateAppointmentStatusController(req, res, next) {
     if (!existing) {
       return res.status(404).json({ message: 'Appointment not found' });
     }
-    if (Number(existing.doctor_id) !== Number(doctor.id)) {
+    if (existing.doctor_id !== doctor.id) {
       return res.status(403).json({ message: 'Not allowed to update this appointment' });
     }
 
@@ -278,3 +236,4 @@ module.exports = {
   getDoctorAppointmentsList,
   updateAppointmentStatusController,
 };
+

@@ -97,37 +97,25 @@ async function initDb() {
     database: (fromUrl?.database ?? process.env.DB_NAME) || 'pureskin_clinic',
   };
 
-  let createdPool = null;
-  try {
-    await ensureDatabaseExists(config);
+  // Ensure DB exists (if not, create it)
+  await ensureDatabaseExists(config);
 
-    createdPool = mysql.createPool({
-      ...config,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      multipleStatements: true,
-    });
+  pool = mysql.createPool({
+    ...config,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    multipleStatements: true,
+  });
 
-    await createdPool.query('SELECT 1');
-    console.log('MySQL pool created and connection verified');
+  // Simple connectivity check
+  await pool.query('SELECT 1');
+  console.log('MySQL pool created and connection verified');
 
-    await runMigrations(createdPool);
+  // Run migrations to ensure tables exist / are up to date
+  await runMigrations(pool);
 
-    pool = createdPool;
-    createdPool = null;
-    return pool;
-  } catch (err) {
-    if (createdPool) {
-      try {
-        await createdPool.end();
-      } catch {
-        // ignore pool shutdown errors
-      }
-    }
-    pool = null;
-    throw err;
-  }
+  return pool;
 }
 
 function getDb() {
