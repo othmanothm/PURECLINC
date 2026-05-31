@@ -1,0 +1,172 @@
+%% Figure 4.1 - Clear layout (less crossing lines)
+%% Export: https://mermaid.live → PNG/SVG for report
+
+classDiagram
+    direction TB
+
+    %% ─── Layer 1: Authentication ───
+    class User {
+        -id PK
+        -name
+        -email UK
+        -password
+        -email_verified
+        -role ENUM
+        -admin_role ENUM
+        -created_at
+        +findUserByEmail()
+        +findUserById()
+        +createUser()
+        +markEmailVerified()
+        +updatePassword()
+    }
+
+    class Patient {
+        -id PK
+        -user_id FK
+        -phone
+        -date_of_birth
+        -address
+        -general_health
+        +getPatientByUserId()
+        +createPatientProfile()
+        +updatePatientProfile()
+    }
+
+    class Doctor {
+        -id PK
+        -user_id FK
+        -specialization
+        +getDoctorByUserId()
+        +getAllDoctors()
+        +createDoctor()
+    }
+
+    note for User "Admin: role=admin + admin_role\n(no separate Admin table)"
+
+    %% ─── Layer 2: Clinical ───
+    class MedicalRecord {
+        -id PK
+        -patient_id FK
+        -skin_type
+        -allergies
+        -notes
+        +getMedicalRecordByPatientId()
+        +createMedicalRecord()
+    }
+
+    class Appointment {
+        -id PK
+        -patient_id FK
+        -doctor_id FK
+        -appointment_date
+        -appointment_time
+        -treatment_category
+        -status
+        +createAppointment()
+        +updateAppointmentStatus()
+    }
+
+    class TreatmentSession {
+        -id PK
+        -appointment_id FK
+        -session_price
+        -amount_paid
+        -notes
+        +createTreatment()
+        +getTreatmentByAppointmentId()
+    }
+
+    class Review {
+        -id PK
+        -patient_id FK
+        -appointment_id FK UK
+        -rating
+        -comment
+        -status
+        +createReview()
+        +updateReviewStatus()
+    }
+
+    %% ─── Layer 3: Store ───
+    class Order {
+        -id PK
+        -patient_id FK
+        -total_price
+        -status
+        -payment_status
+        -stripe_checkout_session_id
+        +createOrder()
+        +getPatientOrders()
+    }
+
+    class OrderItem {
+        -id PK
+        -order_id FK
+        -product_id FK
+        -quantity
+        -price
+        +createOrderItems()
+        +getOrderItems()
+    }
+
+    class Product {
+        -id PK
+        -name
+        -category
+        -price
+        -stock
+        -is_active
+        +getProductById()
+        +decrementStockGuarded()
+    }
+
+    class ProductStockAdjustment {
+        -id PK
+        -product_id FK
+        -delta
+        -created_by_user_id FK
+        +recordStockAdjustment()
+    }
+
+    %% ─── Layer 4: Other ───
+    class Message {
+        -id PK
+        -sender_id FK
+        -receiver_id FK
+        -message
+        +createMessage()
+        +getConversation()
+    }
+
+    class StripeWebhookEvent {
+        -stripe_event_id PK
+        +webhookEventAlreadyProcessed()
+        +fulfillCheckoutSession()
+    }
+
+    %% Auth (vertical, no long diagonal)
+    User "1" --> "0..1" Patient : profile
+    User "1" --> "0..1" Doctor : profile
+
+    %% Clinical chain (left)
+    Patient "1" --> "0..1" MedicalRecord
+    Patient "1" --> "*" Appointment : books
+    Doctor "1" --> "*" Appointment : handles
+    Appointment "1" --> "0..1" TreatmentSession
+    Appointment "1" --> "0..1" Review : unique
+    Patient "1" --> "*" Review
+
+    %% Store chain (right)
+    Patient "1" --> "*" Order
+    Order "1" --> "*" OrderItem
+    Product "1" --> "*" OrderItem
+    Product "1" --> "*" ProductStockAdjustment
+    User "1" --> "*" ProductStockAdjustment : created_by
+
+    %% Messages (from User only)
+    User "1" --> "*" Message : sender
+    User "1" --> "*" Message : receiver
+
+    %% Stripe (dashed = logical, not FK in DB)
+    StripeWebhookEvent ..> Order : fulfills payment

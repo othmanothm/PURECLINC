@@ -1,0 +1,87 @@
+%% PureSkin Clinic - Class diagram for academic report (reviewer-safe)
+%% Matches: database/schema.sql, Users.role + Patients/Doctors profiles
+
+classDiagram
+    direction TB
+
+    class Users {
+        +INT id PK
+        +VARCHAR name
+        +VARCHAR email UK
+        +VARCHAR password
+        +ENUM role
+        +ENUM admin_role
+        +TINYINT email_verified
+        <<login for all actors>>
+    }
+
+    class Patients {
+        +INT id PK
+        +INT user_id FK
+        +VARCHAR phone
+        +DATE date_of_birth
+        +VARCHAR address
+        <<role = patient>>
+    }
+
+    class Doctors {
+        +INT id PK
+        +INT user_id FK
+        +VARCHAR specialization
+        <<role = doctor>>
+    }
+
+    note for Users "Admin staff: same Users table\nrole = admin + admin_role\nNo separate Admin table"
+
+    class MedicalRecords {
+        +INT id PK
+        +INT patient_id FK
+    }
+
+    class Appointments {
+        +INT id PK
+        +INT patient_id FK
+        +INT doctor_id FK
+        +ENUM status
+    }
+
+    class TreatmentSessions {
+        +INT appointment_id FK
+    }
+
+    class Orders {
+        +INT id PK
+        +INT patient_id FK
+    }
+
+    class OrderItems {
+        +INT order_id FK
+        +INT product_id FK
+    }
+
+    class Products {
+        +INT id PK
+    }
+
+    class Reviews {
+        +INT patient_id FK
+        +INT appointment_id FK UK
+    }
+
+    class Messages {
+        +INT sender_id FK
+        +INT receiver_id FK
+    }
+
+    Users "1" --> "0..1" Patients : role patient
+    Users "1" --> "0..1" Doctors : role doctor
+    Patients "1" --> "0..1" MedicalRecords
+    Patients "1" --> "*" Appointments
+    Doctors "1" --> "*" Appointments
+    Appointments "1" --> "0..1" TreatmentSessions
+    Patients "1" --> "*" Orders
+    Orders "1" --> "*" OrderItems
+    Products "1" --> "*" OrderItems
+    Appointments "1" --> "0..1" Reviews
+    Users "1" --> "*" Messages : sender
+    Users "1" --> "*" Messages : receiver

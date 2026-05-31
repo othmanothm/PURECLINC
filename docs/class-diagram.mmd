@@ -1,0 +1,125 @@
+%% PureSkin Clinic - Domain Class Diagram (from database/schema.sql + server/models/)
+%% Render at https://mermaid.live or in VS Code Mermaid extension
+
+classDiagram
+    direction TB
+
+    class User {
+        +INT id PK
+        +VARCHAR name
+        +VARCHAR email UK
+        +VARCHAR password
+        +ENUM role
+        +ENUM admin_role
+        +TINYINT email_verified
+    }
+
+    class Patient {
+        +INT id PK
+        +INT user_id FK
+        +VARCHAR phone
+        +DATE date_of_birth
+        +VARCHAR address
+        +TEXT general_health
+    }
+
+    class MedicalRecord {
+        +INT id PK
+        +INT patient_id FK
+        +VARCHAR skin_type
+        +TEXT complaints
+        +TEXT allergies
+        +TEXT notes
+    }
+
+    class Doctor {
+        +INT id PK
+        +INT user_id FK
+        +VARCHAR specialization
+    }
+
+    class Appointment {
+        +INT id PK
+        +INT patient_id FK
+        +INT doctor_id FK
+        +DATE appointment_date
+        +TIME appointment_time
+        +ENUM treatment_category
+        +ENUM status
+    }
+
+    class TreatmentSession {
+        +INT id PK
+        +INT appointment_id FK
+        +DECIMAL session_price
+        +DECIMAL amount_paid
+        +TEXT notes
+    }
+
+    class Message {
+        +INT id PK
+        +INT sender_id FK
+        +INT receiver_id FK
+        +TEXT message
+    }
+
+    class Product {
+        +INT id PK
+        +VARCHAR name
+        +ENUM category
+        +DECIMAL price
+        +INT stock
+        +TINYINT is_active
+    }
+
+    class Order {
+        +INT id PK
+        +INT patient_id FK
+        +DECIMAL total_price
+        +ENUM status
+        +ENUM payment_status
+        +VARCHAR stripe_checkout_session_id UK
+    }
+
+    class OrderItem {
+        +INT id PK
+        +INT order_id FK
+        +INT product_id FK
+        +INT quantity
+        +DECIMAL price
+    }
+
+    class Review {
+        +INT id PK
+        +INT patient_id FK
+        +INT appointment_id FK UK
+        +TINYINT rating
+        +ENUM status
+    }
+
+    class ProductStockAdjustment {
+        +INT id PK
+        +INT product_id FK
+        +INT delta
+        +INT created_by_user_id FK
+    }
+
+    class StripeWebhookEvent {
+        +VARCHAR stripe_event_id PK
+    }
+
+    User "1" --> "0..1" Patient : has
+    User "1" --> "0..1" Doctor : has
+    Patient "1" --> "0..1" MedicalRecord : has
+    Patient "1" --> "*" Appointment : books
+    Doctor "1" --> "*" Appointment : handles
+    Appointment "1" --> "0..1" TreatmentSession : records
+    Appointment "1" --> "0..1" Review : reviewed by
+    Patient "1" --> "*" Order : places
+    Order "1" --> "*" OrderItem : contains
+    Product "1" --> "*" OrderItem : referenced in
+    Product "1" --> "*" ProductStockAdjustment : audit
+    User "1" --> "*" Message : sends
+    User "1" --> "*" Message : receives
+    Patient "1" --> "*" Review : writes
+    User "1" --> "*" ProductStockAdjustment : created_by

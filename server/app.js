@@ -48,9 +48,30 @@ app.use(morgan('dev'));
 // Serve uploaded images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check (includes appointment slot-guard deployment hints)
+app.get('/api/health', async (req, res) => {
+  const payload = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    appointmentSlotGuardVersion: '3',
+  };
+  try {
+    const { getDb } = require('./config/db');
+    const pool = getDb();
+    const [migrations] = await pool.query(
+      `SELECT name FROM Migrations WHERE name = ? LIMIT 1`,
+      ['020_appointments_active_slot_unique']
+    );
+    payload.migration020Applied = migrations.length > 0;
+    const [cols] = await pool.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Appointments' AND COLUMN_NAME = 'active_slot_key'`
+    );
+    payload.activeSlotKeyColumn = cols.length > 0;
+  } catch {
+    payload.db = 'unavailable';
+  }
+  res.json(payload);
 });
 
 // Routes

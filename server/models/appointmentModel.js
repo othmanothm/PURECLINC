@@ -1,8 +1,38 @@
 const { getDb } = require('../config/db');
 const { APPOINTMENT_STATUS } = require('../constants/appointmentStatus');
 const { treatmentSessionEvidencePredicate } = require('./treatmentModel');
+const { toMysqlTime } = require('../lib/appointmentTime');
+const {
+  findBlockingAppointment,
+  getBlockingSlotTimes,
+  parseDoctorId,
+  normalizeBookingFields,
+} = require('../lib/appointmentSlotService');
 
-async function createAppointment({
+async function findBlockingAppointmentByDoctorDateTime(
+  doctorId,
+  appointmentDate,
+  appointmentTime,
+  connection = null
+) {
+  const db = connection || getDb();
+  const { blocking } = await findBlockingAppointment(db, {
+    doctorId,
+    appointmentDate,
+    appointmentTime,
+  });
+  return blocking;
+}
+
+async function getBlockingSlotTimesForDoctorDate(doctorId, date) {
+  const pool = getDb();
+  return getBlockingSlotTimes(pool, doctorId, date);
+}
+
+/**
+ * Insert with transaction + blocking check + FOR UPDATE (race safety).
+ */
+async function createAppointmentWithSlotGuard({
   patientId,
   doctorId,
   appointmentDate,
@@ -10,13 +40,70 @@ async function createAppointment({
   treatmentCategory = null,
   status = APPOINTMENT_STATUS.PENDING,
 }) {
-  const db = getDb();
-  const [result] = await db.query(
-    `INSERT INTO Appointments (patient_id, doctor_id, appointment_date, appointment_time, treatment_category, status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [patientId, doctorId, appointmentDate, appointmentTime, treatmentCategory, status]
-  );
-  return { id: result.insertId, patient_id: patientId, doctor_id: doctorId };
+  const pool = getDb();
+  const conn = await pool.getConnection();
+  const { doctorId: doctorIdNum, dateStr, timeStr } = normalizeBookingFields({
+    doctorId,
+    appointmentDate,
+    appointmentTime,
+  });
+
+  if (!doctorIdNum || !dateStr || !timeStr) {
+    const err = new Error('Invalid doctor, date, or time');
+    err.status = 400;
+    throw err;
+  }
+
+  const mysqlTime = toMysqlTime(timeStr);
+
+  try {
+    await conn.beginTransaction();
+
+    const { blocking } = await findBlockingAppointment(conn, {
+      doctorId: doctorIdNum,
+      appointmentDate: dateStr,
+      appointmentTime: timeStr,
+    });
+
+    if (blocking) {
+      const err = new Error('Time slot is already booked');
+      err.status = 409;
+      throw err;
+    }
+
+    await conn.query(
+      `SELECT id FROM Appointments
+       WHERE doctor_id = ?
+         AND DATE(appointment_date) = ?
+         AND TIME_FORMAT(appointment_time, '%H:%i') = ?
+         AND LOWER(TRIM(status)) IN ('pending', 'confirmed', 'completed')
+       FOR UPDATE`,
+      [doctorIdNum, dateStr, timeStr]
+    );
+
+    const [result] = await conn.query(
+      `INSERT INTO Appointments (patient_id, doctor_id, appointment_date, appointment_time, treatment_category, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [patientId, doctorIdNum, dateStr, mysqlTime, treatmentCategory, status]
+    );
+
+    await conn.commit();
+    return { id: result.insertId, patient_id: patientId, doctor_id: doctorIdNum };
+  } catch (err) {
+    await conn.rollback();
+    if (err.code === 'ER_DUP_ENTRY') {
+      const dup = new Error('Time slot is already booked');
+      dup.status = 409;
+      throw dup;
+    }
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+async function createAppointment(params) {
+  return createAppointmentWithSlotGuard(params);
 }
 
 async function getAppointmentById(appointmentId) {
@@ -71,9 +158,6 @@ async function getDoctorAppointments(doctorId) {
   return rows;
 }
 
-/**
- * Same as getDoctorAppointments plus hasTreatmentEvidenceForCompletion (for doctor workflow UI).
- */
 async function getDoctorAppointmentsWithCompletionHints(doctorId) {
   const db = getDb();
   const ev = treatmentSessionEvidencePredicate('ts');
@@ -102,13 +186,16 @@ async function getDoctorAppointmentsWithCompletionHints(doctorId) {
 }
 
 async function getAppointmentsByDateAndDoctor(doctorId, date) {
-  const db = getDb();
-  const [rows] = await db.query(
+  const pool = getDb();
+  const doctorIdNum = parseDoctorId(doctorId);
+  const { normalizeAppointmentDate } = require('../lib/appointmentTime');
+  const dateStr = normalizeAppointmentDate(date);
+  const [rows] = await pool.query(
     `SELECT appointment_time, status
      FROM Appointments
-     WHERE doctor_id = ? AND appointment_date = ?
+     WHERE doctor_id = ? AND DATE(appointment_date) = ?
      ORDER BY appointment_time`,
-    [doctorId, date]
+    [doctorIdNum, dateStr]
   );
   return rows;
 }
@@ -122,7 +209,6 @@ async function updateAppointmentStatus(appointmentId, status) {
   return getAppointmentById(appointmentId);
 }
 
-/** IDs of confirmed appointments needing a reminder (see env APPOINTMENT_REMINDER_*). */
 async function listAppointmentIdsNeedingReminder() {
   const db = getDb();
   const hours = Number(process.env.APPOINTMENT_REMINDER_HOURS_BEFORE || 24);
@@ -149,6 +235,9 @@ async function markAppointmentReminderSent(appointmentId) {
 
 module.exports = {
   createAppointment,
+  createAppointmentWithSlotGuard,
+  findBlockingAppointmentByDoctorDateTime,
+  getBlockingSlotTimesForDoctorDate,
   getAppointmentById,
   getPatientAppointments,
   getDoctorAppointments,
@@ -158,4 +247,3 @@ module.exports = {
   listAppointmentIdsNeedingReminder,
   markAppointmentReminderSent,
 };
-
