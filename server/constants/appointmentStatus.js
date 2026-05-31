@@ -48,9 +48,18 @@ function canTransitionTo(fromStatus, toStatus) {
   return allowed.includes(toStatus);
 }
 
-/** Slots stay blocked for any booking except cancelled (pending, confirmed, completed all hold the time). */
+/** Statuses that block a doctor/date/time slot (cancelled does not block). */
+const BLOCKING_SLOT_STATUSES = Object.freeze([
+  APPOINTMENT_STATUS.PENDING,
+  APPOINTMENT_STATUS.CONFIRMED,
+  APPOINTMENT_STATUS.COMPLETED,
+]);
+
+/** Slots stay blocked for pending, confirmed, or completed. */
 function statusBlocksCalendarSlot(status) {
-  return status !== APPOINTMENT_STATUS.CANCELLED;
+  const normalized =
+    typeof status === 'string' ? status.trim().toLowerCase() : status;
+  return BLOCKING_SLOT_STATUSES.includes(normalized);
 }
 
 module.exports = {
@@ -58,6 +67,7 @@ module.exports = {
   ALL_STATUSES,
   TERMINAL_STATUSES,
   ALLOWED_TRANSITIONS,
+  BLOCKING_SLOT_STATUSES,
   isValidAppointmentStatus,
   canTransitionTo,
   statusBlocksCalendarSlot,

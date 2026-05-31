@@ -1,10 +1,13 @@
 const { getAllDoctors, getDoctorByUserId } = require('../models/doctorModel');
 const {
   createAppointment,
+  findBlockingAppointment,
+  getBlockedSlotTimesForDoctorDate,
+  normalizeAppointmentDate,
+  normalizeAppointmentTime,
   getAppointmentById,
   getPatientAppointments,
   getDoctorAppointments,
-  getAppointmentsByDateAndDoctor,
   updateAppointmentStatus,
 } = require('../models/appointmentModel');
 const { getPatientByUserId } = require('../models/patientModel');
@@ -12,7 +15,6 @@ const {
   APPOINTMENT_STATUS,
   isValidAppointmentStatus,
   canTransitionTo,
-  statusBlocksCalendarSlot,
 } = require('../constants/appointmentStatus');
 const { assertDoctorMaySetAppointmentCompleted } = require('../lib/appointmentCompletionGate');
 const {
@@ -50,15 +52,8 @@ async function getAvailableSlots(req, res, next) {
       return res.status(400).json({ message: 'doctorId and date are required' });
     }
 
-    const bookedAppointments = await getAppointmentsByDateAndDoctor(
-      parseInt(doctorId),
-      date
-    );
-    const bookedTimes = new Set(
-      bookedAppointments
-        .filter((apt) => statusBlocksCalendarSlot(apt.status))
-        .map((apt) => apt.appointment_time)
-    );
+    const blockedTimes = await getBlockedSlotTimesForDoctorDate(doctorId, date);
+    const bookedTimes = new Set(blockedTimes);
 
     const availableSlots = TIME_SLOTS.filter((slot) => !bookedTimes.has(slot));
 
@@ -77,16 +72,31 @@ async function bookAppointment(req, res, next) {
       return res.status(404).json({ message: 'Patient profile not found' });
     }
 
-    const { doctorId, appointmentDate, appointmentTime, treatmentCategory } = req.body;
+    const { treatmentCategory } = req.body;
 
-    // Check if slot is available
-    const booked = await getAppointmentsByDateAndDoctor(doctorId, appointmentDate);
-    const isBooked = booked.some(
-      (apt) =>
-        apt.appointment_time === appointmentTime && statusBlocksCalendarSlot(apt.status)
+    const doctorId = parseInt(req.body.doctorId, 10);
+    const appointmentDate = normalizeAppointmentDate(req.body.appointmentDate);
+    const appointmentTime = normalizeAppointmentTime(req.body.appointmentTime);
+
+    const blockingAppointment = await findBlockingAppointment(
+      doctorId,
+      appointmentDate,
+      appointmentTime
     );
 
-    if (isBooked) {
+    console.log('[appointment-slot-check]', {
+      doctorIdRaw: req.body.doctorId,
+      doctorIdNormalized: doctorId,
+      appointmentDateRaw: req.body.appointmentDate,
+      appointmentDateNormalized: appointmentDate,
+      appointmentTimeRaw: req.body.appointmentTime,
+      appointmentTimeNormalized: appointmentTime,
+      blockingFound: Boolean(blockingAppointment),
+      blockingAppointmentId: blockingAppointment?.id,
+      blockingStatus: blockingAppointment?.status,
+    });
+
+    if (blockingAppointment) {
       return res.status(409).json({ message: 'Time slot is already booked' });
     }
 
@@ -107,7 +117,7 @@ async function bookAppointment(req, res, next) {
           patientName: fullApt.patient_name || 'Patient',
           doctorName: fullApt.doctor_name || 'Doctor',
           specialization: fullApt.specialization,
-          date: String(appointmentDate),
+          date: appointmentDate,
           time: appointmentTime,
           treatmentCategory,
           statusNote:
@@ -120,6 +130,9 @@ async function bookAppointment(req, res, next) {
 
     return res.status(201).json({ appointment });
   } catch (err) {
+    if (err.status === 409) {
+      return res.status(409).json({ message: err.message || 'Time slot is already booked' });
+    }
     return next(err);
   }
 }

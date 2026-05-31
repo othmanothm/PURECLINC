@@ -1,6 +1,94 @@
 const { getDb } = require('../config/db');
-const { APPOINTMENT_STATUS } = require('../constants/appointmentStatus');
+const { APPOINTMENT_STATUS, BLOCKING_SLOT_STATUSES } = require('../constants/appointmentStatus');
 const { treatmentSessionEvidencePredicate } = require('./treatmentModel');
+
+function parseDoctorId(doctorId) {
+  const n = parseInt(doctorId, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** "14:00:00" -> "14:00", "14:00" -> "14:00" */
+function normalizeAppointmentTime(value) {
+  if (value == null) return '';
+  if (value instanceof Date) {
+    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+  }
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+  return `${String(parseInt(match[1], 10)).padStart(2, '0')}:${match[2]}`;
+}
+
+/** Returns YYYY-MM-DD without timezone day shift (ISO date-only uses UTC calendar parts). */
+function normalizeAppointmentDate(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    const m = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) return m[1];
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const mo = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${mo}-${d}`;
+  }
+  const asString = String(value).trim();
+  const embedded = asString.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (embedded) return embedded[1];
+  return asString.slice(0, 10);
+}
+
+function createSlotConflictError() {
+  const err = new Error('Time slot is already booked');
+  err.status = 409;
+  return err;
+}
+
+function slotLockName(doctorIdNum, dateStr, timeStr) {
+  return `apt_slot_${doctorIdNum}_${dateStr}_${timeStr}`;
+}
+
+async function findBlockingAppointment(doctorId, appointmentDate, appointmentTime, connection = null) {
+  const db = connection || getDb();
+  const doctorIdNum = parseDoctorId(doctorId);
+  if (!doctorIdNum) return null;
+
+  const dateStr = normalizeAppointmentDate(appointmentDate);
+  const timeStr = normalizeAppointmentTime(appointmentTime);
+
+  const [rows] = await db.query(
+    `SELECT id, status, doctor_id, appointment_date, appointment_time
+     FROM Appointments
+     WHERE doctor_id = ?
+       AND DATE(appointment_date) = ?
+       AND TIME_FORMAT(appointment_time, '%H:%i') = ?
+       AND LOWER(TRIM(status)) IN (?, ?, ?)
+     LIMIT 1`,
+    [doctorIdNum, dateStr, timeStr, ...BLOCKING_SLOT_STATUSES]
+  );
+  return rows[0] || null;
+}
+
+/** @deprecated use findBlockingAppointment */
+const findActiveAppointmentByDoctorSlot = findBlockingAppointment;
+
+async function getBlockedSlotTimesForDoctorDate(doctorId, appointmentDate) {
+  const db = getDb();
+  const doctorIdNum = parseDoctorId(doctorId);
+  if (!doctorIdNum) return [];
+
+  const dateStr = normalizeAppointmentDate(appointmentDate);
+  const [rows] = await db.query(
+    `SELECT TIME_FORMAT(appointment_time, '%H:%i') AS slot_time
+     FROM Appointments
+     WHERE doctor_id = ?
+       AND DATE(appointment_date) = ?
+       AND LOWER(TRIM(status)) IN (?, ?, ?)
+     ORDER BY slot_time`,
+    [doctorIdNum, dateStr, ...BLOCKING_SLOT_STATUSES]
+  );
+  return rows.map((r) => r.slot_time);
+}
 
 async function createAppointment({
   patientId,
@@ -10,13 +98,69 @@ async function createAppointment({
   treatmentCategory = null,
   status = APPOINTMENT_STATUS.PENDING,
 }) {
+  const doctorIdNum = parseDoctorId(doctorId);
+  if (!doctorIdNum) {
+    throw createSlotConflictError();
+  }
+
+  const dateStr = normalizeAppointmentDate(appointmentDate);
+  const timeStr = normalizeAppointmentTime(appointmentTime);
+  const mysqlTime = `${timeStr}:00`;
+
+  const pool = getDb();
+  const connection = await pool.getConnection();
+  const lockName = slotLockName(doctorIdNum, dateStr, timeStr);
+
+  try {
+    const [lockRows] = await connection.query('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
+    if (!lockRows[0]?.acquired) {
+      throw createSlotConflictError();
+    }
+
+    const blockingAppointment = await findBlockingAppointment(
+      doctorIdNum,
+      dateStr,
+      timeStr,
+      connection
+    );
+    if (blockingAppointment) {
+      throw createSlotConflictError();
+    }
+
+    const [result] = await connection.query(
+      `INSERT INTO Appointments (patient_id, doctor_id, appointment_date, appointment_time, treatment_category, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [patientId, doctorIdNum, dateStr, mysqlTime, treatmentCategory, status]
+    );
+
+    return { id: result.insertId, patient_id: patientId, doctor_id: doctorIdNum };
+  } finally {
+    try {
+      await connection.query('SELECT RELEASE_LOCK(?)', [lockName]);
+    } catch (_releaseErr) {
+      // lock may already be released on connection return
+    }
+    connection.release();
+  }
+}
+
+/** Read-only: groups of duplicate active slots (manual cleanup required). */
+async function findDuplicateActiveAppointmentSlots() {
   const db = getDb();
-  const [result] = await db.query(
-    `INSERT INTO Appointments (patient_id, doctor_id, appointment_date, appointment_time, treatment_category, status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [patientId, doctorId, appointmentDate, appointmentTime, treatmentCategory, status]
+  const [rows] = await db.query(
+    `SELECT doctor_id,
+            DATE(appointment_date) AS appointment_date,
+            TIME_FORMAT(appointment_time, '%H:%i') AS appointment_time,
+            COUNT(*) AS count,
+            GROUP_CONCAT(CONCAT(id, ':', status) ORDER BY id) AS appointments
+     FROM Appointments
+     WHERE LOWER(TRIM(status)) IN (?, ?, ?)
+     GROUP BY doctor_id, DATE(appointment_date), TIME_FORMAT(appointment_time, '%H:%i')
+     HAVING COUNT(*) > 1
+     ORDER BY appointment_date, appointment_time, doctor_id`,
+    [...BLOCKING_SLOT_STATUSES]
   );
-  return { id: result.insertId, patient_id: patientId, doctor_id: doctorId };
+  return rows;
 }
 
 async function getAppointmentById(appointmentId) {
@@ -103,12 +247,14 @@ async function getDoctorAppointmentsWithCompletionHints(doctorId) {
 
 async function getAppointmentsByDateAndDoctor(doctorId, date) {
   const db = getDb();
+  const doctorIdNum = parseDoctorId(doctorId);
+  const dateStr = normalizeAppointmentDate(date);
   const [rows] = await db.query(
     `SELECT appointment_time, status
      FROM Appointments
-     WHERE doctor_id = ? AND appointment_date = ?
+     WHERE doctor_id = ? AND DATE(appointment_date) = ?
      ORDER BY appointment_time`,
-    [doctorId, date]
+    [doctorIdNum, dateStr]
   );
   return rows;
 }
@@ -149,6 +295,13 @@ async function markAppointmentReminderSent(appointmentId) {
 
 module.exports = {
   createAppointment,
+  findBlockingAppointment,
+  findActiveAppointmentByDoctorSlot,
+  findDuplicateActiveAppointmentSlots,
+  getBlockedSlotTimesForDoctorDate,
+  normalizeAppointmentDate,
+  normalizeAppointmentTime,
+  createSlotConflictError,
   getAppointmentById,
   getPatientAppointments,
   getDoctorAppointments,
