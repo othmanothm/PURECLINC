@@ -131,7 +131,6 @@ STRIPE_SECRET_KEY=your_stripe_secret_key
 STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
 ```
 
-Do not commit real `.env` or secret files to GitHub.
 
 ### 4. Install frontend dependencies
 
